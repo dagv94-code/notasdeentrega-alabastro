@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
@@ -497,6 +497,16 @@ function ClientesTab({ showToast, db, clientes }) {
     } catch(e) { showToast("Error al guardar cliente"); }
   };
 
+  const eliminarCliente = async (id) => {
+    if (!window.confirm("¿Seguro que deseas eliminar este cliente repetido?")) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', id));
+      showToast("Cliente eliminado con éxito");
+    } catch (e) {
+      showToast("Error al eliminar");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <form onSubmit={addCliente} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4">
@@ -515,6 +525,9 @@ function ClientesTab({ showToast, db, clientes }) {
               <div className="font-bold text-white text-lg">{c.nombre}</div>
               <div className="text-sm text-zinc-400">{c.telefono} • {c.direccion}</div>
             </div>
+            <button onClick={() => eliminarCliente(c.id)} className="p-2 bg-zinc-800 hover:bg-red-900/50 text-red-500 rounded-lg transition-all" title="Eliminar cliente">
+              <Trash2 className="w-5 h-5" />
+            </button>
           </div>
         ))}
         {clientes.length === 0 && <div className="text-center text-zinc-500 py-4">No hay clientes aún.</div>}
