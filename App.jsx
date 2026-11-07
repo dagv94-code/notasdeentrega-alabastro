@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { 
-  Users, ShoppingCart, UserCheck, FileText, Download, Plus, 
-  Trash2, ChevronRight, CheckCircle2, Phone, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Eye, Share2, Square, CheckSquare, Ban
+  Users, UserCheck, FileText, Download, Plus, 
+  Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
+  History, Wallet, Edit, Share2
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -23,9 +23,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'agropecuaria-alabastro';
 
-const LOGO_SRC = "WhatsApp Image 2026-11-06 at 12.57.48 PM.jpeg";
-
-// DATOS DE RESPALDO LOCALES (GARANTIZAN QUE NUNCA QUEDE VACÍO)
 const DEFAULT_VENDEDORES = [
   { id: 'v1', nombre: 'David Garcia' },
   { id: 'v2', nombre: 'Yennifer Acosta' },
@@ -50,7 +47,6 @@ export default function AgropecuariaApp() {
   const [activeTab, setActiveTab] = useState('nueva-nota');
   const [loading, setLoading] = useState(true);
 
-  // Data States con respaldo inmediato
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState(DEFAULT_PRODUCTOS);
   const [vendedores, setVendedores] = useState(DEFAULT_VENDEDORES);
@@ -67,11 +63,7 @@ export default function AgropecuariaApp() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (error) {
         console.error("Auth error:", error);
       }
@@ -92,28 +84,26 @@ export default function AgropecuariaApp() {
 
     const unsubClientes = onSnapshot(collection(db, ...basePublicPath, 'clientes'), (snap) => {
       const cls = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (cls.length > 0) {
-        setClientes(cls.sort((a, b) => a.nombre.localeCompare(b.nombre)));
-      }
-    }, (err) => console.log("Usando estado local clientes"));
+      setClientes(cls.sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    }, (err) => console.log("Clientes locales"));
 
     const unsubProductos = onSnapshot(collection(db, ...basePublicPath, 'catalogo'), (snap) => {
       const prods = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (prods.length > 0) {
         setProductos(prods.sort((a, b) => a.codigo.localeCompare(b.codigo)));
       }
-    }, (err) => console.log("Usando catálogo local"));
+    }, (err) => console.log("Catálogo local"));
 
     const unsubVendedores = onSnapshot(collection(db, ...basePublicPath, 'vendedores'), (snap) => {
       const vends = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (vends.length > 0) {
         setVendedores(vends.sort((a, b) => a.nombre.localeCompare(b.nombre)));
       }
-    }, (err) => console.log("Usando vendedores locales"));
+    }, (err) => console.log("Vendedores locales"));
 
     const unsubNotas = onSnapshot(collection(db, ...basePublicPath, 'notas'), (snap) => {
       setNotas(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
-    }, (err) => console.log("Error notas"));
+    }, (err) => console.log("Notas locales"));
 
     return () => {
       unsubClientes();
@@ -134,7 +124,7 @@ export default function AgropecuariaApp() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24 selection:bg-rose-500/30">
       <header className="bg-zinc-900 border-b border-zinc-800 p-4 sticky top-0 z-10 shadow-lg">
         <div className="max-w-3xl mx-auto flex items-center justify-center gap-3">
-          <img src={LOGO_SRC} alt="Logo" className="w-10 h-10 rounded-full border border-rose-500/50 shadow-md" onError={(e) => e.target.style.display='none'} />
+          <div className="w-10 h-10 rounded-full bg-rose-600/20 border border-rose-500 flex items-center justify-center text-rose-500 font-black text-lg">A</div>
           <h1 className="text-xl font-black tracking-tight text-white uppercase">
             Distribuidora <span className="text-rose-500">Alabastro</span>
           </h1>
@@ -282,7 +272,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
-  const descargarImagen = async (shareToWhatsApp = false) => {
+  const descargarImagen = async () => {
     if (!window.html2canvas) return showToast("Cargando generador...");
     const element = document.getElementById('recibo-final');
     if (!element) return;
@@ -316,7 +306,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       <div className="space-y-6">
         <div className="flex justify-between items-center bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
           <button onClick={reiniciar} className="flex items-center text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5 mr-2" /> Atrás</button>
-          <button onClick={() => descargarImagen(false)} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center"><Download className="w-5 h-5 mr-2" /> Descargar Recibo</button>
+          <button onClick={descargarImagen} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center"><Download className="w-5 h-5 mr-2" /> Descargar Recibo</button>
         </div>
 
         <div className="overflow-x-auto pb-8">
@@ -466,7 +456,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   );
 }
 
-function HistorialTab({ notas, showToast, db, handleEditNota }) {
+function HistorialTab({ notas }) {
   return (
     <div className="space-y-4 pb-10">
       <h2 className="text-xl font-black border-b border-zinc-800 pb-3">Historial de Notas</h2>
@@ -486,11 +476,11 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
   );
 }
 
-function CuentasPorCobrarTab({ notas, vendedores }) {
+function CuentasPorCobrarTab() {
   return <div className="p-5 text-center text-zinc-400">Módulo de Cuentas por Cobrar Activo</div>;
 }
 
-function ClientesTab({ showToast, db, user, clientes }) {
+function ClientesTab({ showToast, db, clientes }) {
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
@@ -499,7 +489,7 @@ function ClientesTab({ showToast, db, user, clientes }) {
     e.preventDefault();
     if(!nombre.trim()) return showToast("Nombre requerido");
     try {
-      await addDoc(collection(db, appId === 'agropecuaria-alabastro' ? 'artifacts' : 'artifacts', appId, 'public', 'data', 'clientes'), {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clientes'), {
         nombre: nombre.trim(), telefono: telefono.trim(), direccion: direccion.trim(), creado: serverTimestamp()
       });
       setNombre(''); setTelefono(''); setDireccion('');
@@ -516,6 +506,19 @@ function ClientesTab({ showToast, db, user, clientes }) {
         <textarea placeholder="Dirección" value={direccion} onChange={e => setDireccion(e.target.value)} rows="2" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white resize-none" />
         <button type="submit" className="w-full bg-rose-600 text-white font-bold py-3 rounded-xl">Guardar Cliente</button>
       </form>
+
+      <div className="space-y-3">
+        <h3 className="font-bold text-zinc-400 uppercase text-xs">Clientes Registrados ({clientes.length})</h3>
+        {clientes.map(c => (
+          <div key={c.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
+            <div>
+              <div className="font-bold text-white text-lg">{c.nombre}</div>
+              <div className="text-sm text-zinc-400">{c.telefono} • {c.direccion}</div>
+            </div>
+          </div>
+        ))}
+        {clientes.length === 0 && <div className="text-center text-zinc-500 py-4">No hay clientes aún.</div>}
+      </div>
     </div>
   );
 }
