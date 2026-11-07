@@ -8,7 +8,7 @@ import {
   History, Wallet, Edit, Eye, Share2, Square, CheckSquare, Ban
 } from 'lucide-react';
 
-// --- FIREBASE INITIALIZATION (CONFIGURACIÓN REAL Y COMPLETA) ---
+// --- FIREBASE INITIALIZATION (CONFIGURACIÓN REAL Y RUTA BLINDADA) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCCj2ZiCj040Wa8aO-NOYe_aSHxGiRtu3U",
   authDomain: "agropecuaria-alabastro.firebaseapp.com",
@@ -22,7 +22,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'agropecuaria-alabastro';
+const appId = 'agropecuaria-alabastro'; // Ruta estática y directa
 
 const LOGO_SRC = "WhatsApp Image 2026-11-06 at 12.57.48 PM.jpeg";
 
