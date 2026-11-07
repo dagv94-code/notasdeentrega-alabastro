@@ -8,7 +8,7 @@ import {
   History, Wallet, Edit, Eye, Share2, Square, CheckSquare, Ban
 } from 'lucide-react';
 
-// --- FIREBASE INITIALIZATION (LLAVES REALES INSERTADAS) ---
+// --- FIREBASE INITIALIZATION (CONFIGURACIÓN REAL Y COMPLETA) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCCj2ZiCj040Wa8aO-NOYe_aSHxGiRtu3U",
   authDomain: "agropecuaria-alabastro.firebaseapp.com",
@@ -18,6 +18,7 @@ const firebaseConfig = {
   appId: "1:277618306201:web:c9e63bfe2b3c1264e8dc08",
   measurementId: "G-81TLRYTKFE"
 };
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -277,7 +278,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       let timestamp = Date.now();
 
       if (!editingNota) {
-        // Get and increment sequence safely only if it's a NEW note
         const seqRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'secuencia');
         let seqDoc = await getDoc(seqRef);
         
@@ -293,7 +293,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
 
       const total = items.reduce((acc, item) => acc + item.subtotal, 0);
       
-      // Use existing date if editing, otherwise today
       const dateObj = editingNota && editingNota.timestamp ? new Date(editingNota.timestamp) : new Date();
       const fecha8 = `${dateObj.getDate().toString().padStart(2, '0')}/${(dateObj.getMonth()+1).toString().padStart(2, '0')}/${dateObj.getFullYear()}`;
 
@@ -310,7 +309,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         estado: editingNota?.estado || 'activo'
       };
 
-      // Save to Firebase
       if (editingNota) {
         docRef = doc(db, 'artifacts', appId, 'public', 'data', 'notas', editingNota.id);
         await updateDoc(docRef, finalReceiptData);
@@ -342,13 +340,12 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         scale: 2,
         backgroundColor: '#ffffff',
         logging: false,
-        useCORS: true // Try to load the image cross-origin if needed
+        useCORS: true
       });
       
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
       
       if (shareToWhatsApp) {
-        // Try native share if available and file sharing is supported
         if (navigator.canShare && navigator.canShare({ files: [new File([''], 'a.jpg', { type: 'image/jpeg' })] })) {
           const blob = await (await fetch(dataUrl)).blob();
           const file = new File([blob], `Recibo_Alabastro_${receiptData.numero}.jpg`, { type: 'image/jpeg' });
@@ -358,7 +355,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
             files: [file]
           });
         } else {
-           // Fallback to downloading + link to WhatsApp
            downloadFile(dataUrl, `Recibo_Alabastro_${receiptData.numero}.jpg`);
            window.open(`https://api.whatsapp.com/send?text=Hola, adjunto los detalles de la nota de entrega N° ${receiptData.numero}. (Por favor adjunta la imagen que se acaba de descargar)`, '_blank');
         }
@@ -416,14 +412,12 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
           </div>
         </div>
 
-        {/* RECEIPT PREVIEW - THIS IS WHAT GETS CONVERTED TO IMAGE */}
         <div className="overflow-x-auto pb-8">
           <div 
             id="recibo-final" 
             className="bg-white text-black p-8 w-[800px] mx-auto shadow-2xl relative"
             style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
           >
-            {/* Header */}
             <div className="border-b-4 border-rose-600 pb-4 mb-6">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
@@ -451,7 +445,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
               </div>
             </div>
 
-            {/* Info Section */}
             <div className="grid grid-cols-2 gap-6 mb-6">
               <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-200">
                 <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Datos del Cliente</h3>
@@ -486,7 +479,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
               </div>
             </div>
 
-            {/* Table */}
             <table className="w-full mb-6 text-sm">
               <thead>
                 <tr className="bg-zinc-900 text-white">
@@ -510,7 +502,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
               </tbody>
             </table>
 
-            {/* Totals */}
             <div className="flex justify-end mb-8">
               <div className="bg-zinc-50 p-4 rounded-xl border-2 border-rose-600 min-w-[300px]">
                 <div className="flex justify-between items-center text-xl font-black">
@@ -520,7 +511,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
               </div>
             </div>
 
-            {/* Footers */}
             <div className="space-y-3 text-center border-t-2 border-dashed border-zinc-300 pt-6">
               <div className="bg-green-100 text-green-800 py-2 px-4 rounded-lg inline-flex items-center justify-center font-bold text-sm gap-2">
                 <Phone className="w-4 h-4"/> REALIZA TUS PEDIDOS AL WHATSAPP. DESPACHAMOS MARA, MARACAIBO, SAN FRANCISCO
@@ -535,7 +525,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     );
   }
 
-  // BUILDER VIEW
   return (
     <div className="space-y-6 animate-in fade-in">
       <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
@@ -609,7 +598,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
           </div>
         </div>
 
-        {/* Lines */}
         {items.length > 0 && (
           <div className="mt-6 border border-zinc-800 rounded-xl overflow-hidden">
             <table className="w-full text-left text-sm">
@@ -713,7 +701,6 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
         ))}
       </div>
 
-      {/* Modal Confirmación Anular */}
       {notaAAnular && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95">
@@ -739,13 +726,13 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
 // --- CUENTAS POR COBRAR TAB ---
 function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
   const [filtroVendedor, setFiltroVendedor] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('pendientes'); // todos, pendientes, pagados
+  const [filtroEstado, setFiltroEstado] = useState('pendientes');
 
   const getDaysTerm = (termino) => {
     if (termino === '7 días') return 7;
     if (termino === '15 días') return 15;
     if (termino === '30 días') return 30;
-    return 0; // Contado
+    return 0;
   };
 
   const togglePago = async (nota) => {
@@ -939,7 +926,6 @@ function ClientesTab({ showToast, db, user, clientes }) {
         ))}
       </div>
 
-      {/* Modal Confirmación Editar Cliente */}
       {clienteEditando && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 space-y-4">
@@ -989,7 +975,6 @@ function CatalogoTab({ showToast, db, user, productos }) {
   const [editDescripcion, setEditDescripcion] = useState('');
   const [editPrecio, setEditPrecio] = useState('');
 
-  // Auto-pad on blur
   const handleCodigoBlur = () => {
     if (codigo) setCodigo(codigo.padStart(4, '0').slice(0, 4));
   };
@@ -1051,7 +1036,6 @@ function CatalogoTab({ showToast, db, user, productos }) {
         ))}
       </div>
 
-      {/* Modal Confirmación Editar Producto */}
       {productoEditando && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 space-y-4">
