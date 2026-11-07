@@ -274,7 +274,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       const vendedor = vendedores.find(v => v.id === vendedorId) || (editingNota ? editingNota.vendedor : null);
       
       let currentNumber = editingNota ? editingNota.numero : 1;
-      let docRef = null;
       let timestamp = Date.now();
 
       if (!editingNota) {
@@ -282,10 +281,12 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         let seqDoc = await getDoc(seqRef);
         
         if (seqDoc.exists()) {
-          currentNumber = (seqDoc.data().valor || 0) + 1;
+          const dataVal = seqDoc.data().valor;
+          currentNumber = (typeof dataVal === 'number' ? dataVal : parseInt(dataVal) || 0) + 1;
           await updateDoc(seqRef, { valor: currentNumber });
         } else {
-          await setDoc(seqRef, { valor: currentNumber });
+          await setDoc(seqRef, { valor: 1 });
+          currentNumber = 1;
         }
       } else {
         timestamp = editingNota.timestamp || Date.now();
@@ -310,7 +311,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       };
 
       if (editingNota) {
-        docRef = doc(db, 'artifacts', appId, 'public', 'data', 'notas', editingNota.id);
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'notas', editingNota.id);
         await updateDoc(docRef, finalReceiptData);
         showToast("Nota actualizada correctamente");
       } else {
