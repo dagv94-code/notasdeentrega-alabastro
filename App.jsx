@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2
+  History, Wallet, Edit, Share2, Search
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -379,9 +379,9 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-zinc-400 uppercase">Cliente</label>
+            <label className="text-xs font-bold text-zinc-400 uppercase">Cliente (Autocompletable)</label>
             <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none">
-              <option value="">Seleccione Cliente...</option>
+              <option value="">Seleccione o busque cliente...</option>
               {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>
@@ -484,6 +484,7 @@ function ClientesTab({ showToast, db, clientes }) {
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
+  const [busqueda, setBusqueda] = useState('');
 
   const addCliente = async (e) => {
     e.preventDefault();
@@ -498,7 +499,7 @@ function ClientesTab({ showToast, db, clientes }) {
   };
 
   const eliminarCliente = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este cliente repetido?")) return;
+    if (!window.confirm("¿Seguro que deseas eliminar este cliente?")) return;
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', id));
       showToast("Cliente eliminado con éxito");
@@ -506,6 +507,10 @@ function ClientesTab({ showToast, db, clientes }) {
       showToast("Error al eliminar");
     }
   };
+
+  const clientesFiltrados = clientes.filter(c => 
+    c.nombre.toLowerCase().includes(busqueda.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -518,19 +523,33 @@ function ClientesTab({ showToast, db, clientes }) {
       </form>
 
       <div className="space-y-3">
-        <h3 className="font-bold text-zinc-400 uppercase text-xs">Clientes Registrados ({clientes.length})</h3>
-        {clientes.map(c => (
+        <div className="flex justify-between items-center">
+          <h3 className="font-bold text-zinc-400 uppercase text-xs">Directorio ({clientesFiltrados.length})</h3>
+        </div>
+        
+        <div className="relative">
+          <Search className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
+          <input 
+            type="text" 
+            placeholder="Buscar cliente (ej. escribe 'd')..." 
+            value={busqueda} 
+            onChange={e => setBusqueda(e.target.value)} 
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-rose-500" 
+          />
+        </div>
+
+        {clientesFiltrados.map(c => (
           <div key={c.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
             <div>
               <div className="font-bold text-white text-lg">{c.nombre}</div>
               <div className="text-sm text-zinc-400">{c.telefono} • {c.direccion}</div>
             </div>
-            <button onClick={() => eliminarCliente(c.id)} className="p-2 bg-zinc-800 hover:bg-red-900/50 text-red-500 rounded-lg transition-all" title="Eliminar cliente">
+            <button onClick={() => eliminarCliente(c.id)} className="p-2 bg-zinc-800 hover:bg-red-900/50 text-red-500 rounded-lg transition-all shadow" title="Eliminar cliente">
               <Trash2 className="w-5 h-5" />
             </button>
           </div>
         ))}
-        {clientes.length === 0 && <div className="text-center text-zinc-500 py-4">No hay clientes aún.</div>}
+        {clientesFiltrados.length === 0 && <div className="text-center text-zinc-500 py-4">No se encontraron clientes.</div>}
       </div>
     </div>
   );
