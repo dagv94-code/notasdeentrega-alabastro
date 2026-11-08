@@ -60,6 +60,17 @@ export default function AgropecuariaApp() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // INYECTAR HTML2CANVAS AUTOMÁTICAMENTE AL CARGAR LA APP
+  useEffect(() => {
+    if (!document.getElementById('html2canvas-script')) {
+      const script = document.createElement('script');
+      script.id = 'html2canvas-script';
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -294,12 +305,17 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   };
 
   const descargarImagen = async () => {
-    if (!window.html2canvas) return showToast("Cargando generador...");
     const element = document.getElementById('recibo-final');
-    if (!element) return;
+    if (!element) return showToast("No se encontró el recibo");
 
     try {
       setGenerating(true);
+      if (!window.html2canvas) {
+        showToast("Cargando motor de imágenes, intente de nuevo en 2 segundos...");
+        setGenerating(false);
+        return;
+      }
+
       const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
       
@@ -307,8 +323,9 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       link.download = `Recibo_Alabastro_${receiptData.numero}.jpg`;
       link.href = dataUrl;
       link.click();
-      showToast("Imagen descargada");
+      showToast("Imagen descargada con éxito");
     } catch (e) {
+      console.error(e);
       showToast("Error al generar imagen");
     } finally {
       setGenerating(false);
@@ -316,12 +333,17 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   };
 
   const compartirWhatsApp = async () => {
-    if (!window.html2canvas) return showToast("Cargando generador...");
     const element = document.getElementById('recibo-final');
-    if (!element) return;
+    if (!element) return showToast("No se encontró el recibo");
 
     try {
       setGenerating(true);
+      if (!window.html2canvas) {
+        showToast("Cargando motor, intente de nuevo en 2 segundos...");
+        setGenerating(false);
+        return;
+      }
+
       const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
       
@@ -342,6 +364,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         window.open(`https://api.whatsapp.com/send?text=Hola, adjunto los detalles de la nota N° ${receiptData.numero}. (Por favor adjunta la imagen descargada)`, '_blank');
       }
     } catch (e) {
+      console.error(e);
       showToast("Error al compartir en WhatsApp");
     } finally {
       setGenerating(false);
@@ -362,11 +385,11 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         <div className="flex flex-wrap justify-between items-center bg-zinc-900 p-4 rounded-2xl border border-zinc-800 gap-3">
           <button onClick={reiniciar} className="flex items-center text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5 mr-2" /> Atrás / Nueva Nota</button>
           <div className="flex gap-2">
-            <button onClick={descargarImagen} disabled={generating} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
-              <Download className="w-5 h-5 mr-2" /> Descargar Imagen
+            <button onClick={descargarImagen} disabled={generating} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
+              <Download className="w-5 h-5 mr-2" /> {generating ? 'Generando...' : 'Descargar Imagen'}
             </button>
-            <button onClick={compartirWhatsApp} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
-              <Share2 className="w-5 h-5 mr-2" /> WhatsApp
+            <button onClick={compartirWhatsApp} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
+              <Share2 className="w-5 h-5 mr-2" /> {generating ? 'Generando...' : 'WhatsApp'}
             </button>
           </div>
         </div>
