@@ -61,6 +61,16 @@ export default function AgropecuariaApp() {
   };
 
   useEffect(() => {
+    if (!document.getElementById('html2canvas-script')) {
+      const script = document.createElement('script');
+      script.id = 'html2canvas-script';
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
@@ -183,8 +193,16 @@ function NavButton({ icon, label, active, onClick }) {
 }
 
 function ReciboView({ receiptData }) {
+  const calcularFechaVencimiento = (timestamp, termino) => {
+    const dias = termino === '7 días' ? 7 : termino === '15 días' ? 15 : termino === '30 días' ? 30 : 0;
+    if (dias === 0) return 'Inmediato (Contado)';
+    const d = new Date(timestamp);
+    d.setDate(d.getDate() + dias);
+    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+  };
+
   return (
-    <div id="recibo-final" className="bg-white text-black p-8 w-[800px] mx-auto shadow-2xl relative" style={{ fontFamily: "Arial, sans-serif" }}>
+    <div id={`recibo-${receiptData.id || 'final'}`} className="bg-white text-black p-8 w-[800px] mx-auto shadow-2xl relative" style={{ fontFamily: "Arial, sans-serif" }}>
       <div className="border-b-4 border-rose-600 pb-4 mb-6 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-black uppercase text-zinc-900">Agropecuaria <span className="text-rose-600">Alabastro</span></h1>
@@ -204,10 +222,15 @@ function ReciboView({ receiptData }) {
           <p className="text-sm text-zinc-600 mt-1">{receiptData.cliente?.telefono}</p>
           <p className="text-sm text-zinc-600">{receiptData.cliente?.direccion}</p>
         </div>
-        <div className="bg-zinc-50 p-4 rounded-xl border">
-          <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Vendedor</h3>
-          <p className="font-bold text-lg">{receiptData.vendedor?.nombre}</p>
-          <p className="text-sm mt-2"><b>Condición de Pago:</b> {receiptData.terminoPago}</p>
+        <div className="bg-zinc-50 p-4 rounded-xl border flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Vendedor</h3>
+            <p className="font-bold text-lg">{receiptData.vendedor?.nombre}</p>
+          </div>
+          <div className="mt-2 pt-2 border-t border-zinc-200">
+            <p className="text-xs text-zinc-600"><b>Condición:</b> {receiptData.terminoPago}</p>
+            <p className="text-xs text-rose-600 font-bold mt-1"><b>Fecha de Pago:</b> {calcularFechaVencimiento(receiptData.timestamp, receiptData.terminoPago)}</p>
+          </div>
         </div>
       </div>
 
@@ -241,7 +264,31 @@ function ReciboView({ receiptData }) {
         </div>
       </div>
 
-      <div className="text-center text-xs text-zinc-500 border-t pt-4 font-bold uppercase">
+      {/* MEDIOS DE PAGOS Y AGRADECIMIENTO */}
+      <div className="grid grid-cols-2 gap-4 border-t-2 border-dashed border-zinc-300 pt-6 items-center">
+        <div className="border border-black text-[10px] leading-tight">
+          <div className="bg-black text-white font-bold text-center py-1 uppercase tracking-wider">Medios de Pagos</div>
+          <div className="p-2 space-y-1 font-mono">
+            <div className="font-bold underline text-zinc-900">PAGO MÓVIL - TRANSFERENCIA</div>
+            <div>BANCO: MERCANTIL</div>
+            <div>TELEFONO: 0424-656 5520</div>
+            <div>CEDULA: 22.362.833</div>
+            <div>NRO CUENTA: 01740111471114416694</div>
+            <div className="font-bold underline text-zinc-900 mt-2">BINANCE</div>
+            <div>CORREO: DAGV94@GMAIL.COM</div>
+            <div>BINANCE ID: 1254404157</div>
+            <div>DAGV-1994</div>
+          </div>
+        </div>
+        <div className="text-center space-y-2">
+          <div className="text-4xl">🐷</div>
+          <div className="text-2xl font-black text-amber-900 tracking-wider uppercase" style={{ fontFamily: "Comic Sans MS, cursive, sans-serif" }}>
+            ¡GRACIAS <br />POR SU COMPRA!
+          </div>
+        </div>
+      </div>
+
+      <div className="text-center text-[10px] text-zinc-500 border-t mt-4 pt-2 font-bold uppercase">
         Tasa BCV Euro establecida por el Banco Central de Venezuela el día de su cancelación.
       </div>
     </div>
@@ -359,8 +406,32 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
-  const imprimirPDF = () => {
-    window.print();
+  const descargarImagen = async (idRecibo = 'recibo-final') => {
+    const element = document.getElementById(idRecibo);
+    if (!element) return showToast("No se encontró el recibo");
+
+    try {
+      setGenerating(true);
+      if (!window.html2canvas) {
+        showToast("Cargando motor de imágenes...");
+        setGenerating(false);
+        return;
+      }
+
+      const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      
+      const link = document.createElement('a');
+      link.download = `Nota_Entrega_${receiptData?.numero || 'Alabastro'}.jpg`;
+      link.href = dataUrl;
+      link.click();
+      showToast("Imagen descargada con éxito");
+    } catch (e) {
+      console.error(e);
+      showToast("Error al generar imagen");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const compartirWhatsApp = () => {
@@ -388,11 +459,11 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         <div className="flex flex-wrap justify-between items-center bg-zinc-900 p-4 rounded-2xl border border-zinc-800 gap-3">
           <button onClick={reiniciar} className="flex items-center text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5 mr-2" /> Atrás / Nueva Nota</button>
           <div className="flex gap-2">
-            <button onClick={imprimirPDF} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
-              <Printer className="w-5 h-5 mr-2" /> Guardar PDF / Imprimir
+            <button onClick={() => descargarImagen('recibo-final')} disabled={generating} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
+              <Download className="w-5 h-5 mr-2" /> {generating ? 'Generando...' : 'Descargar Imagen'}
             </button>
-            <button onClick={compartirWhatsApp} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
-              <Share2 className="w-5 h-5 mr-2" /> Enviar por WhatsApp
+            <button onClick={compartirWhatsApp} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
+              <Share2 className="w-5 h-5 mr-2" /> WhatsApp
             </button>
           </div>
         </div>
@@ -503,11 +574,38 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
     }
   };
 
-  const imprimirNotaHistorial = (nota) => {
+  const descargarImagenHistorial = async (nota) => {
     setNotaVisualizando(nota);
-    setTimeout(() => {
-      window.print();
-    }, 200);
+    setTimeout(async () => {
+      const element = document.getElementById(`recibo-${nota.id}`);
+      if (!element) {
+        showToast("Error al generar la imagen");
+        setNotaVisualizando(null);
+        return;
+      }
+
+      try {
+        if (!window.html2canvas) {
+          showToast("Cargando motor de imágenes...");
+          setNotaVisualizando(null);
+          return;
+        }
+
+        const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
+        const link = document.createElement('a');
+        link.download = `Nota_Entrega_${nota.numero}.jpg`;
+        link.href = dataUrl;
+        link.click();
+        showToast("Imagen descargada con éxito");
+      } catch (e) {
+        console.error(e);
+        showToast("Error al generar imagen");
+      } finally {
+        setNotaVisualizando(null);
+      }
+    }, 150);
   };
 
   const compartirWhatsAppHistorial = (nota) => {
@@ -543,7 +641,7 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
               <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
                 <span className={`text-xl font-black ${isAnulado ? 'line-through text-zinc-600' : 'text-white'}`}>${parseFloat(nota.total || 0).toFixed(2)}</span>
                 <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => imprimirNotaHistorial(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-emerald-400 rounded-lg transition-all" title="Descargar / Imprimir Recibo">
+                  <button onClick={() => descargarImagenHistorial(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-emerald-400 rounded-lg transition-all" title="Descargar Imagen del Recibo">
                     <Download className="w-5 h-5" />
                   </button>
                   <button onClick={() => compartirWhatsAppHistorial(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-green-400 rounded-lg transition-all" title="Compartir WhatsApp">
@@ -563,7 +661,7 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
       </div>
 
       {notaVisualizando && (
-        <div className="hidden print:block">
+        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
           <ReciboView receiptData={notaVisualizando} />
         </div>
       )}
