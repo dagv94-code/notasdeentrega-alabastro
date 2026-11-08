@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Printer
+  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -264,7 +264,6 @@ function ReciboView({ receiptData }) {
         </div>
       </div>
 
-      {/* MEDIOS DE PAGOS Y AGRADECIMIENTO */}
       <div className="grid grid-cols-2 gap-4 border-t-2 border-dashed border-zinc-300 pt-6 items-center">
         <div className="border border-black text-[10px] leading-tight">
           <div className="bg-black text-white font-bold text-center py-1 uppercase tracking-wider">Medios de Pagos</div>
@@ -434,15 +433,33 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
-  const compartirWhatsApp = () => {
-    if (!receiptData) return;
-    let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${receiptData.numero}*\nFecha: ${receiptData.fecha}\nCliente: ${receiptData.cliente?.nombre}\nVendedor: ${receiptData.vendedor?.nombre}\nCondición: ${receiptData.terminoPago}\n\n*DETALLE:*`;
-    receiptData.items.forEach(i => {
+  const compartirWhatsApp = async (notaObj = receiptData) => {
+    if (!notaObj) return;
+    
+    // 1. Descargar la imagen automáticamente para que el usuario la tenga lista en su dispositivo
+    const element = document.getElementById(`recibo-${notaObj.id || 'final'}`);
+    if (element && window.html2canvas) {
+      try {
+        const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const link = document.createElement('a');
+        link.download = `Nota_Entrega_${notaObj.numero}.jpg`;
+        link.href = dataUrl;
+        link.click();
+      } catch (e) {
+        console.error("Error descargando imagen para WA", e);
+      }
+    }
+
+    // 2. Abrir WhatsApp con el texto estructurado
+    let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${notaObj.numero}*\nFecha: ${notaObj.fecha}\nCliente: ${notaObj.cliente?.nombre}\nVendedor: ${notaObj.vendedor?.nombre}\nCondición: ${notaObj.terminoPago}\n\n*DETALLE:*`;
+    (notaObj.items || []).forEach(i => {
       mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
     });
-    mensaje += `\n\n*TOTAL A PAGAR: $${receiptData.total.toFixed(2)} REF*\n¡Gracias por su compra!`;
+    mensaje += `\n\n*TOTAL A PAGAR: $${parseFloat(notaObj.total || 0).toFixed(2)} REF*\n*(Imagen de la nota descargada en su dispositivo para adjuntar)*\n¡Gracias por su compra!`;
     
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
+    showToast("Imagen descargada y WhatsApp abierto");
   };
 
   const reiniciar = () => {
@@ -462,7 +479,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
             <button onClick={() => descargarImagen('recibo-final')} disabled={generating} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
               <Download className="w-5 h-5 mr-2" /> {generating ? 'Generando...' : 'Descargar Imagen'}
             </button>
-            <button onClick={compartirWhatsApp} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
+            <button onClick={() => compartirWhatsApp(receiptData)} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
               <Share2 className="w-5 h-5 mr-2" /> WhatsApp
             </button>
           </div>
@@ -608,14 +625,32 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
     }, 150);
   };
 
-  const compartirWhatsAppHistorial = (nota) => {
-    let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${nota.numero}*\nFecha: ${nota.fecha}\nCliente: ${nota.cliente?.nombre}\nVendedor: ${nota.vendedor?.nombre}\nCondición: ${nota.terminoPago}\n\n*DETALLE:*`;
-    (nota.items || []).forEach(i => {
-      mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
-    });
-    mensaje += `\n\n*TOTAL A PAGAR: $${parseFloat(nota.total || 0).toFixed(2)} REF*\n¡Gracias por su compra!`;
-    
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
+  const compartirWhatsAppHistorial = async (nota) => {
+    setNotaVisualizando(nota);
+    setTimeout(async () => {
+      const element = document.getElementById(`recibo-${nota.id}`);
+      if (element && window.html2canvas) {
+        try {
+          const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+          const link = document.createElement('a');
+          link.download = `Nota_Entrega_${nota.numero}.jpg`;
+          link.href = dataUrl;
+          link.click();
+        } catch (e) {
+          console.error("Error descargando para WhatsApp", e);
+        }
+      }
+
+      let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${nota.numero}*\nFecha: ${nota.fecha}\nCliente: ${nota.cliente?.nombre}\nVendedor: ${nota.vendedor?.nombre}\nCondición: ${nota.terminoPago}\n\n*DETALLE:*`;
+      (nota.items || []).forEach(i => {
+        mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
+      });
+      mensaje += `\n\n*TOTAL A PAGAR: $${parseFloat(nota.total || 0).toFixed(2)} REF*\n*(Imagen de la nota descargada en su dispositivo para adjuntar)*\n¡Gracias por su compra!`;
+      
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
+      setNotaVisualizando(null);
+    }, 150);
   };
 
   return (
@@ -661,7 +696,7 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
       </div>
 
       {notaVisualizando && (
-        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <div style={{ position: 'fixed', left: '-9999px', top: '-9999px', zIndex: -1000 }}>
           <ReciboView receiptData={notaVisualizando} />
         </div>
       )}
