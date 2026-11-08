@@ -156,7 +156,7 @@ export default function AgropecuariaApp() {
       <main className="max-w-4xl mx-auto p-4">
         {activeTab === 'nueva-nota' && <NuevaNotaTab clientes={clientes} productos={productos} vendedores={vendedores} showToast={showToast} db={db} user={user} editingNota={editingNota} setEditingNota={setEditingNota} setActiveTab={setActiveTab} />}
         {activeTab === 'historial' && <HistorialTab notas={notas} showToast={showToast} db={db} handleEditNota={handleEditNota} />}
-        {activeTab === 'cuentas' && <CuentasPorCobrarTab notas={notas} vendedores={vendedores} showToast={showToast} db={db} />}
+        {activeTab === 'cuentas' && <CuentasPorCobrarTab notas={notas} vendedores={vendedores} clientes={clientes} showToast={showToast} db={db} />}
         {activeTab === 'clientes' && <ClientesTab showToast={showToast} db={db} user={user} clientes={clientes} />}
         {activeTab === 'catalogo' && <CatalogoTab showToast={showToast} db={db} user={user} productos={productos} />}
         {activeTab === 'vendedores' && <VendedoresTab showToast={showToast} db={db} user={user} vendedores={vendedores} />}
@@ -436,7 +436,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   const compartirWhatsApp = async (notaObj = receiptData) => {
     if (!notaObj) return;
     
-    // 1. Descargar la imagen automáticamente para que el usuario la tenga lista en su dispositivo
     const element = document.getElementById(`recibo-${notaObj.id || 'final'}`);
     if (element && window.html2canvas) {
       try {
@@ -451,15 +450,8 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       }
     }
 
-    // 2. Abrir WhatsApp con el texto estructurado
-    let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${notaObj.numero}*\nFecha: ${notaObj.fecha}\nCliente: ${notaObj.cliente?.nombre}\nVendedor: ${notaObj.vendedor?.nombre}\nCondición: ${notaObj.terminoPago}\n\n*DETALLE:*`;
-    (notaObj.items || []).forEach(i => {
-      mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
-    });
-    mensaje += `\n\n*TOTAL A PAGAR: $${parseFloat(notaObj.total || 0).toFixed(2)} REF*\n*(Imagen de la nota descargada en su dispositivo para adjuntar)*\n¡Gracias por su compra!`;
-    
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
-    showToast("Imagen descargada y WhatsApp abierto");
+    window.open(`https://api.whatsapp.com/send?phone=`, '_blank');
+    showToast("Imagen descargada. Ya puedes adjuntarla en WhatsApp");
   };
 
   const reiniciar = () => {
@@ -642,13 +634,8 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
         }
       }
 
-      let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${nota.numero}*\nFecha: ${nota.fecha}\nCliente: ${nota.cliente?.nombre}\nVendedor: ${nota.vendedor?.nombre}\nCondición: ${nota.terminoPago}\n\n*DETALLE:*`;
-      (nota.items || []).forEach(i => {
-        mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
-      });
-      mensaje += `\n\n*TOTAL A PAGAR: $${parseFloat(nota.total || 0).toFixed(2)} REF*\n*(Imagen de la nota descargada en su dispositivo para adjuntar)*\n¡Gracias por su compra!`;
-      
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
+      window.open(`https://api.whatsapp.com/send?phone=`, '_blank');
+      showToast("Imagen descargada. Ya puedes adjuntarla en WhatsApp");
       setNotaVisualizando(null);
     }, 150);
   };
@@ -704,9 +691,10 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
   );
 }
 
-function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
+function CuentasPorCobrarTab({ notas, vendedores, clientes, showToast, db }) {
   const [filtroVendedor, setFiltroVendedor] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('pendientes');
+  const [filtroCliente, setFiltroCliente] = useState('');
 
   const togglePago = async (nota) => {
     try {
@@ -717,9 +705,33 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
     }
   };
 
+  const calcularMaduracion = (timestamp, termino) => {
+    const totalDiasTermino = termino === '7 días' ? 7 : termino === '15 días' ? 15 : termino === '30 días' ? 30 : 0;
+    if (totalDiasTermino === 0) return { texto: 'Contado (Inmediato)', clase: 'text-zinc-400' };
+
+    const fechaEmision = new Date(timestamp);
+    const fechaVencimiento = new Date(fechaEmision.getTime() + totalDiasTermino * 24 * 60 * 60 * 1000);
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+
+    const diferenciaMs = fechaVencimiento - hoy;
+    const diasRestantes = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
+
+    const umbralPorVencer = Math.ceil(totalDiasTermino / 3); // Último tercio
+
+    if (diasRestantes < 0) {
+      return { texto: `Vencido (${Math.abs(diasRestantes)}d)`, clase: 'text-red-500 font-bold animate-pulse' };
+    } else if (diasRestantes <= umbralPorVencer) {
+      return { texto: `Por vencer (${diasRestantes}d)`, clase: 'text-yellow-400 font-bold' };
+    } else {
+      return { texto: `Vigente (${diasRestantes}d)`, clase: 'text-green-400 font-medium' };
+    }
+  };
+
   const notasFiltradas = notas.filter(nota => {
     if (nota.estado === 'anulado') return false;
     if (filtroVendedor && nota.vendedor?.id !== filtroVendedor) return false;
+    if (filtroCliente && nota.cliente?.id !== filtroCliente) return false;
     if (filtroEstado === 'pendientes' && nota.pagado) return false;
     if (filtroEstado === 'pagados' && !nota.pagado) return false;
     return true;
@@ -732,7 +744,7 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
           <Wallet className="text-rose-500" /> Cuentas por Cobrar (Estado de Cuenta)
         </h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-1">
             <label className="text-xs font-bold text-zinc-400 uppercase">Filtrar por Vendedor</label>
             <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
@@ -741,7 +753,14 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-bold text-zinc-400 uppercase">Estatus de Pago</label>
+            <label className="text-xs font-bold text-zinc-400 uppercase">Filtrar por Cliente</label>
+            <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+              <option value="">Todos los clientes</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Estatus de Factura</label>
             <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
               <option value="pendientes">Solo Pendientes</option>
               <option value="pagados">Solo Pagados</option>
@@ -758,33 +777,38 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
               <th className="p-4">Nota</th>
               <th className="p-4">Cliente / Vendedor</th>
               <th className="p-4">Condición</th>
+              <th className="p-4">Maduración</th>
               <th className="p-4">Total</th>
               <th className="p-4 text-center">Registrar Pago</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800/50">
-            {notasFiltradas.map(nota => (
-              <tr key={nota.id} className="hover:bg-zinc-800/30">
-                <td className="p-4 font-mono font-bold text-rose-500">#{nota.numero}</td>
-                <td className="p-4">
-                  <div className="font-bold text-white">{nota.cliente?.nombre}</div>
-                  <div className="text-xs text-zinc-500">{nota.vendedor?.nombre} • {nota.fecha}</div>
-                </td>
-                <td className="p-4 text-zinc-300">{nota.terminoPago}</td>
-                <td className="p-4 font-black text-white">${parseFloat(nota.total || 0).toFixed(2)} REF</td>
-                <td className="p-4 text-center">
-                  <button onClick={() => togglePago(nota)} className="p-2 rounded-lg hover:bg-zinc-800 transition-colors inline-flex items-center gap-2">
-                    {nota.pagado ? (
-                      <span className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full"><CheckSquare className="w-5 h-5"/> Pagado</span>
-                    ) : (
-                      <span className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20"><Square className="w-5 h-5"/> Marcar Pago</span>
-                    )}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {notasFiltradas.map(nota => {
+              const maduracion = calcularMaduracion(nota.timestamp, nota.terminoPago);
+              return (
+                <tr key={nota.id} className="hover:bg-zinc-800/30">
+                  <td className="p-4 font-mono font-bold text-rose-500">#{nota.numero}</td>
+                  <td className="p-4">
+                    <div className="font-bold text-white">{nota.cliente?.nombre}</div>
+                    <div className="text-xs text-zinc-500">{nota.vendedor?.nombre} • {nota.fecha}</div>
+                  </td>
+                  <td className="p-4 text-zinc-300">{nota.terminoPago}</td>
+                  <td className={`p-4 font-bold ${maduracion.clase}`}>{maduracion.texto}</td>
+                  <td className="p-4 font-black text-white">${parseFloat(nota.total || 0).toFixed(2)} REF</td>
+                  <td className="p-4 text-center">
+                    <button onClick={() => togglePago(nota)} className="p-2 rounded-lg hover:bg-zinc-800 transition-colors inline-flex items-center gap-2">
+                      {nota.pagado ? (
+                        <span className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full"><CheckSquare className="w-5 h-5"/> Pagado</span>
+                      ) : (
+                        <span className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20"><Square className="w-5 h-5"/> Marcar Pago</span>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {notasFiltradas.length === 0 && (
-              <tr><td colSpan="5" className="p-8 text-center text-zinc-500">No hay documentos en este estado.</td></tr>
+              <tr><td colSpan="6" className="p-8 text-center text-zinc-500">No hay documentos en este estado.</td></tr>
             )}
           </tbody>
         </table>
@@ -914,118 +938,4 @@ function CatalogoTab({ showToast, db, productos }) {
       <form onSubmit={addProducto} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4 shadow-xl">
         <h2 className="text-xl font-black flex items-center gap-2"><Tag className="text-rose-500"/> Nuevo Producto</h2>
         <div className="flex gap-3">
-          <input placeholder="Código (ej. 0010)" value={codigo} onChange={e => setCodigo(e.target.value)} maxLength={4} className="w-1/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none font-mono" />
-          <input placeholder="Precio REF" type="number" step="0.01" value={precio} onChange={e => setPrecio(e.target.value)} className="w-2/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
-        </div>
-        <input placeholder="Descripción del producto" value={descripcion} onChange={e => setDescripcion(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
-        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl">Guardar Producto</button>
-      </form>
-
-      <div className="space-y-3">
-        <h3 className="font-bold text-zinc-400 uppercase text-xs">Inventario Disponible ({productos.length})</h3>
-        {productos.map(p => (
-          <div key={p.id} className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 flex justify-between items-center gap-3">
-            <div className="flex items-center gap-3">
-              <span className="bg-zinc-800 text-zinc-300 font-mono text-xs px-2 py-1 rounded">{p.codigo}</span>
-              <span className="font-bold text-white">{p.descripcion}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="font-black text-rose-500">${parseFloat(p.precio || 0).toFixed(2)}</span>
-              <div className="flex gap-1">
-                <button onClick={() => { setProdEditando(p.id); setEditCodigo(p.codigo); setEditDesc(p.descripcion); setEditPrecio(p.precio); }} className="p-2 bg-zinc-800 text-blue-400 rounded-lg" title="Editar"><Edit className="w-4 h-4"/></button>
-                <button onClick={() => eliminarProducto(p.id)} className="p-2 bg-zinc-800 text-red-500 rounded-lg" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {prodEditando && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="text-xl font-black text-rose-500">Editar Producto</h3>
-            <div className="flex gap-3">
-              <input value={editCodigo} onChange={e => setEditCodigo(e.target.value)} maxLength={4} className="w-1/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none font-mono" />
-              <input value={editPrecio} onChange={e => setEditPrecio(e.target.value)} type="number" step="0.01" className="w-2/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
-            </div>
-            <input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setProdEditando(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
-              <button onClick={async () => {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'catalogo', prodEditando), { codigo: editCodigo.padStart(4, '0'), descripcion: editDesc.trim(), precio: parseFloat(editPrecio) });
-                setProdEditando(null); showToast("Producto actualizado");
-              }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function VendedoresTab({ showToast, db, vendedores }) {
-  const [nombre, setNombre] = useState('');
-  const [vendEditando, setVendEditando] = useState(null);
-  const [editNombre, setEditNombre] = useState('');
-
-  const addVendedor = async (e) => {
-    e.preventDefault();
-    if(!nombre.trim()) return showToast("Nombre requerido");
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'vendedores'), {
-        nombre: nombre.trim(), creado: serverTimestamp()
-      });
-      setNombre('');
-      showToast("Vendedor registrado");
-    } catch(e) { showToast("Error al guardar"); }
-  };
-
-  const eliminarVendedor = async (id) => {
-    if (!window.confirm("¿Eliminar este vendedor?")) return;
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vendedores', id));
-      showToast("Vendedor eliminado");
-    } catch(e) { showToast("Error al eliminar"); }
-  };
-
-  return (
-    <div className="space-y-6 pb-10">
-      <form onSubmit={addVendedor} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4 shadow-xl">
-        <h2 className="text-xl font-black flex items-center gap-2"><UserCheck className="text-rose-500"/> Registrar Vendedor</h2>
-        <input placeholder="Nombre del Vendedor" value={nombre} onChange={e => setNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" />
-        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl">Guardar Vendedor</button>
-      </form>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {vendedores.map(v => (
-          <div key={v.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-rose-600/20 flex items-center justify-center text-rose-500 font-bold">{v.nombre ? v.nombre.charAt(0) : 'V'}</div>
-              <span className="font-bold text-white">{v.nombre}</span>
-            </div>
-            <div className="flex gap-1">
-              <button onClick={() => { setVendEditando(v.id); setEditNombre(v.nombre); }} className="p-2 bg-zinc-800 text-blue-400 rounded-lg" title="Editar"><Edit className="w-4 h-4"/></button>
-              <button onClick={() => eliminarVendedor(v.id)} className="p-2 bg-zinc-800 text-red-500 rounded-lg" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {vendEditando && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="text-xl font-black text-rose-500">Editar Vendedor</h3>
-            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setVendEditando(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
-              <button onClick={async () => {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vendedores', vendEditando), { nombre: editNombre.trim() });
-                setVendEditando(null); showToast("Vendedor actualizado");
-              }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+          <input placeholder="Código
