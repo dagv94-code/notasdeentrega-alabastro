@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban
+  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Printer
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -59,17 +59,6 @@ export default function AgropecuariaApp() {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
-
-  // INYECTAR HTML2CANVAS AUTOMÁTICAMENTE AL CARGAR LA APP
-  useEffect(() => {
-    if (!document.getElementById('html2canvas-script')) {
-      const script = document.createElement('script');
-      script.id = 'html2canvas-script';
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-      script.async = true;
-      document.body.appendChild(script);
-    }
-  }, []);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -193,6 +182,72 @@ function NavButton({ icon, label, active, onClick }) {
   );
 }
 
+function ReciboView({ receiptData }) {
+  return (
+    <div id="recibo-final" className="bg-white text-black p-8 w-[800px] mx-auto shadow-2xl relative" style={{ fontFamily: "Arial, sans-serif" }}>
+      <div className="border-b-4 border-rose-600 pb-4 mb-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-black uppercase text-zinc-900">Agropecuaria <span className="text-rose-600">Alabastro</span></h1>
+          <p className="text-sm text-zinc-500 font-bold mt-1">agropecuarialabastro@gmail.com</p>
+        </div>
+        <div className="text-right">
+          <h2 className="text-2xl font-black text-rose-600">NOTA DE ENTREGA</h2>
+          <div className="mt-2 text-lg font-bold">N° {receiptData.numero}</div>
+          <div className="text-sm text-zinc-600">FECHA: {receiptData.fecha}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-zinc-50 p-4 rounded-xl border">
+          <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Cliente</h3>
+          <p className="font-bold text-lg">{receiptData.cliente?.nombre}</p>
+          <p className="text-sm text-zinc-600 mt-1">{receiptData.cliente?.telefono}</p>
+          <p className="text-sm text-zinc-600">{receiptData.cliente?.direccion}</p>
+        </div>
+        <div className="bg-zinc-50 p-4 rounded-xl border">
+          <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Vendedor</h3>
+          <p className="font-bold text-lg">{receiptData.vendedor?.nombre}</p>
+          <p className="text-sm mt-2"><b>Condición de Pago:</b> {receiptData.terminoPago}</p>
+        </div>
+      </div>
+
+      <table className="w-full mb-6 text-sm">
+        <thead>
+          <tr className="bg-zinc-900 text-white">
+            <th className="py-2 px-3 text-left">COD</th>
+            <th className="py-2 px-3 text-left">DESCRIPCIÓN</th>
+            <th className="py-2 px-3 text-right">PESO (KG)</th>
+            <th className="py-2 px-3 text-right">PRECIO REF</th>
+            <th className="py-2 px-3 text-right">SUBTOTAL REF</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-200">
+          {receiptData.items.map((item, idx) => (
+            <tr key={idx}>
+              <td className="py-2 px-3">{item.codigo}</td>
+              <td className="py-2 px-3 font-bold">{item.descripcion}</td>
+              <td className="py-2 px-3 text-right">{item.peso.toFixed(2)}</td>
+              <td className="py-2 px-3 text-right">{item.precio.toFixed(2)}</td>
+              <td className="py-2 px-3 text-right font-bold">{item.subtotal.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="flex justify-end mb-6">
+        <div className="bg-zinc-100 p-4 rounded-xl border-2 border-rose-600 min-w-[250px] text-right">
+          <span className="text-rose-600 font-bold text-lg">TOTAL: </span>
+          <span className="text-xl font-black">{receiptData.total.toFixed(2)} REF</span>
+        </div>
+      </div>
+
+      <div className="text-center text-xs text-zinc-500 border-t pt-4 font-bold uppercase">
+        Tasa BCV Euro establecida por el Banco Central de Venezuela el día de su cancelación.
+      </div>
+    </div>
+  );
+}
+
 function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, editingNota, setEditingNota, setActiveTab }) {
   const [clienteId, setClienteId] = useState('');
   const [vendedorId, setVendedorId] = useState('');
@@ -304,71 +359,19 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
-  const descargarImagen = async () => {
-    const element = document.getElementById('recibo-final');
-    if (!element) return showToast("No se encontró el recibo");
-
-    try {
-      setGenerating(true);
-      if (!window.html2canvas) {
-        showToast("Cargando motor de imágenes, intente de nuevo en 2 segundos...");
-        setGenerating(false);
-        return;
-      }
-
-      const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      
-      const link = document.createElement('a');
-      link.download = `Recibo_Alabastro_${receiptData.numero}.jpg`;
-      link.href = dataUrl;
-      link.click();
-      showToast("Imagen descargada con éxito");
-    } catch (e) {
-      console.error(e);
-      showToast("Error al generar imagen");
-    } finally {
-      setGenerating(false);
-    }
+  const imprimirPDF = () => {
+    window.print();
   };
 
-  const compartirWhatsApp = async () => {
-    const element = document.getElementById('recibo-final');
-    if (!element) return showToast("No se encontró el recibo");
-
-    try {
-      setGenerating(true);
-      if (!window.html2canvas) {
-        showToast("Cargando motor, intente de nuevo en 2 segundos...");
-        setGenerating(false);
-        return;
-      }
-
-      const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      
-      const blob = await (await fetch(dataUrl)).blob();
-      const file = new File([blob], `Recibo_Alabastro_${receiptData.numero}.jpg`, { type: 'image/jpeg' });
-      
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: `Nota N° ${receiptData.numero}`,
-          text: `Hola, adjunto nota de entrega N° ${receiptData.numero} por un total de $${receiptData.total.toFixed(2)} REF.`,
-          files: [file]
-        });
-      } else {
-        const link = document.createElement('a');
-        link.download = `Recibo_Alabastro_${receiptData.numero}.jpg`;
-        link.href = dataUrl;
-        link.click();
-        window.open(`https://api.whatsapp.com/send?text=Hola, adjunto los detalles de la nota N° ${receiptData.numero}. (Por favor adjunta la imagen descargada)`, '_blank');
-      }
-    } catch (e) {
-      console.error(e);
-      showToast("Error al compartir en WhatsApp");
-    } finally {
-      setGenerating(false);
-    }
+  const compartirWhatsApp = () => {
+    if (!receiptData) return;
+    let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${receiptData.numero}*\nFecha: ${receiptData.fecha}\nCliente: ${receiptData.cliente?.nombre}\nVendedor: ${receiptData.vendedor?.nombre}\nCondición: ${receiptData.terminoPago}\n\n*DETALLE:*`;
+    receiptData.items.forEach(i => {
+      mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
+    });
+    mensaje += `\n\n*TOTAL A PAGAR: $${receiptData.total.toFixed(2)} REF*\n¡Gracias por su compra!`;
+    
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
   const reiniciar = () => {
@@ -385,77 +388,17 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         <div className="flex flex-wrap justify-between items-center bg-zinc-900 p-4 rounded-2xl border border-zinc-800 gap-3">
           <button onClick={reiniciar} className="flex items-center text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5 mr-2" /> Atrás / Nueva Nota</button>
           <div className="flex gap-2">
-            <button onClick={descargarImagen} disabled={generating} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
-              <Download className="w-5 h-5 mr-2" /> {generating ? 'Generando...' : 'Descargar Imagen'}
+            <button onClick={imprimirPDF} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
+              <Printer className="w-5 h-5 mr-2" /> Guardar PDF / Imprimir
             </button>
-            <button onClick={compartirWhatsApp} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow disabled:opacity-50">
-              <Share2 className="w-5 h-5 mr-2" /> {generating ? 'Generando...' : 'WhatsApp'}
+            <button onClick={compartirWhatsApp} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
+              <Share2 className="w-5 h-5 mr-2" /> Enviar por WhatsApp
             </button>
           </div>
         </div>
 
         <div className="overflow-x-auto pb-8">
-          <div id="recibo-final" className="bg-white text-black p-8 w-[800px] mx-auto shadow-2xl relative" style={{ fontFamily: "Arial, sans-serif" }}>
-            <div className="border-b-4 border-rose-600 pb-4 mb-6 flex justify-between items-center">
-              <div>
-                <h1 className="text-3xl font-black uppercase text-zinc-900">Agropecuaria <span className="text-rose-600">Alabastro</span></h1>
-                <p className="text-sm text-zinc-500 font-bold mt-1">agropecuarialabastro@gmail.com</p>
-              </div>
-              <div className="text-right">
-                <h2 className="text-2xl font-black text-rose-600">NOTA DE ENTREGA</h2>
-                <div className="mt-2 text-lg font-bold">N° {receiptData.numero}</div>
-                <div className="text-sm text-zinc-600">FECHA: {receiptData.fecha}</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              <div className="bg-zinc-50 p-4 rounded-xl border">
-                <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Cliente</h3>
-                <p className="font-bold text-lg">{receiptData.cliente?.nombre}</p>
-                <p className="text-sm text-zinc-600 mt-1">{receiptData.cliente?.telefono}</p>
-                <p className="text-sm text-zinc-600">{receiptData.cliente?.direccion}</p>
-              </div>
-              <div className="bg-zinc-50 p-4 rounded-xl border">
-                <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Vendedor</h3>
-                <p className="font-bold text-lg">{receiptData.vendedor?.nombre}</p>
-                <p className="text-sm mt-2"><b>Condición de Pago:</b> {receiptData.terminoPago}</p>
-              </div>
-            </div>
-
-            <table className="w-full mb-6 text-sm">
-              <thead>
-                <tr className="bg-zinc-900 text-white">
-                  <th className="py-2 px-3 text-left">COD</th>
-                  <th className="py-2 px-3 text-left">DESCRIPCIÓN</th>
-                  <th className="py-2 px-3 text-right">PESO (KG)</th>
-                  <th className="py-2 px-3 text-right">PRECIO REF</th>
-                  <th className="py-2 px-3 text-right">SUBTOTAL REF</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200">
-                {receiptData.items.map((item, idx) => (
-                  <tr key={idx}>
-                    <td className="py-2 px-3">{item.codigo}</td>
-                    <td className="py-2 px-3 font-bold">{item.descripcion}</td>
-                    <td className="py-2 px-3 text-right">{item.peso.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-right">{item.precio.toFixed(2)}</td>
-                    <td className="py-2 px-3 text-right font-bold">{item.subtotal.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="flex justify-end mb-6">
-              <div className="bg-zinc-100 p-4 rounded-xl border-2 border-rose-600 min-w-[250px] text-right">
-                <span className="text-rose-600 font-bold text-lg">TOTAL: </span>
-                <span className="text-xl font-black">{receiptData.total.toFixed(2)} REF</span>
-              </div>
-            </div>
-
-            <div className="text-center text-xs text-zinc-500 border-t pt-4 font-bold uppercase">
-              Tasa BCV Euro establecida por el Banco Central de Venezuela el día de su cancelación.
-            </div>
-          </div>
+          <ReciboView receiptData={receiptData} />
         </div>
       </div>
     );
@@ -548,6 +491,8 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
 }
 
 function HistorialTab({ notas, showToast, db, handleEditNota }) {
+  const [notaVisualizando, setNotaVisualizando] = useState(null);
+
   const anularNota = async (notaId) => {
     if (!window.confirm("¿Seguro que deseas anular este documento? Se mantendrá el número pero tachado.")) return;
     try {
@@ -556,6 +501,23 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
     } catch (e) {
       showToast("Error al anular");
     }
+  };
+
+  const imprimirNotaHistorial = (nota) => {
+    setNotaVisualizando(nota);
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  const compartirWhatsAppHistorial = (nota) => {
+    let mensaje = `*AGROPECUARIA ALABASTRO*\n*NOTA DE ENTREGA N° ${nota.numero}*\nFecha: ${nota.fecha}\nCliente: ${nota.cliente?.nombre}\nVendedor: ${nota.vendedor?.nombre}\nCondición: ${nota.terminoPago}\n\n*DETALLE:*`;
+    (nota.items || []).forEach(i => {
+      mensaje += `\n- ${i.descripcion} (${i.peso} kg) | Subtotal: $${i.subtotal.toFixed(2)}`;
+    });
+    mensaje += `\n\n*TOTAL A PAGAR: $${parseFloat(nota.total || 0).toFixed(2)} REF*\n¡Gracias por su compra!`;
+    
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
   return (
@@ -580,7 +542,13 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
               </div>
               <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
                 <span className={`text-xl font-black ${isAnulado ? 'line-through text-zinc-600' : 'text-white'}`}>${parseFloat(nota.total || 0).toFixed(2)}</span>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => imprimirNotaHistorial(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-emerald-400 rounded-lg transition-all" title="Descargar / Imprimir Recibo">
+                    <Download className="w-5 h-5" />
+                  </button>
+                  <button onClick={() => compartirWhatsAppHistorial(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-green-400 rounded-lg transition-all" title="Compartir WhatsApp">
+                    <Share2 className="w-5 h-5" />
+                  </button>
                   <button onClick={() => handleEditNota(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-blue-400 rounded-lg transition-all" title="Modificar">
                     <Edit className="w-5 h-5" />
                   </button>
@@ -593,6 +561,12 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
           );
         })}
       </div>
+
+      {notaVisualizando && (
+        <div className="hidden print:block">
+          <ReciboView receiptData={notaVisualizando} />
+        </div>
+      )}
     </div>
   );
 }
