@@ -696,6 +696,7 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
   const [filtroEstado, setFiltroEstado] = useState('pendientes');
   const [filtroMaduracion, setFiltroMaduracion] = useState('todos');
   const [busquedaCliente, setBusquedaCliente] = useState('');
+  const [notaVisualizando, setNotaVisualizando] = useState(null);
 
   const calcularMaduracion = (timestamp, termino) => {
     const totalDiasPlazo = termino === '7 días' ? 7 : termino === '15 días' ? 15 : termino === '30 días' ? 30 : 0;
@@ -727,6 +728,33 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
     } catch (e) {
       showToast("Error al actualizar pago");
     }
+  };
+
+  const enviarRecordatorioWhatsApp = async (nota) => {
+    setNotaVisualizando(nota);
+    setTimeout(async () => {
+      const element = document.getElementById(`recibo-${nota.id}`);
+      if (element && window.html2canvas) {
+        try {
+          const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+          const link = document.createElement('a');
+          link.download = `Nota_Entrega_${nota.numero}.jpg`;
+          link.href = dataUrl;
+          link.click();
+        } catch (e) {
+          console.error("Error descargando imagen para recordatorio WA", e);
+        }
+      }
+
+      const detalleItems = (nota.items || []).map(i => `- ${i.descripcion} (${i.peso} kg) - Subtotal: $${i.subtotal.toFixed(2)}`).join('\n');
+      
+      const mensaje = `¡Buenos días! ☀️\nEstimado(a) ${nota.cliente?.nombre || 'Cliente'}, te escribimos para saludarte y recordarte amablemente el vencimiento de tu factura pendiente.\nA continuación, los detalles de tu pedido:\n- Nota de Entrega N°: ${nota.numero}\n- Fecha: ${nota.fecha}\n- Detalle:\n${detalleItems}\n- TOTAL A PAGAR: $${parseFloat(nota.total || 0).toFixed(2)} REF\nPuedes realizar tu pago por los siguientes medios:\n🏦 PAGO MÓVIL - TRANSFERENCIA\n- Banco: Mercantil\n- Teléfono: 0424-656 5520\n- Cédula: 22.362.833\n- Nro. Cuenta: 0174011471114416694\n🟡 BINANCE\n- Correo: DAGV94@GMAIL.COM\n- Binance ID: 1254404157\n- Etiqueta/Memo: DAGV-1994\nPor favor, compártenos el capture del pago por aquí una vez lo realices.\n¡Estamos atentos a tus nuevos pedidos! Que tengas un excelente día .`;
+
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
+      showToast("Imagen de factura descargada y WhatsApp abierto con el recordatorio");
+      setNotaVisualizando(null);
+    }, 150);
   };
 
   const notasFiltradas = notas.filter(nota => {
@@ -800,6 +828,7 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
               <th className="p-4">Días de Maduración</th>
               <th className="p-4">Estatus Plazo</th>
               <th className="p-4">Total</th>
+              <th className="p-4 text-center">Recordatorio WA</th>
               <th className="p-4 text-center">Registrar Pago</th>
             </tr>
           </thead>
@@ -830,6 +859,11 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
                   </td>
                   <td className="p-4 font-black text-white">${parseFloat(nota.total || 0).toFixed(2)} REF</td>
                   <td className="p-4 text-center">
+                    <button onClick={() => enviarRecordatorioWhatsApp(nota)} className="p-2 bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] rounded-lg transition-all inline-flex items-center gap-1 font-bold text-xs" title="Enviar Recordatorio por WhatsApp">
+                      <Share2 className="w-4 h-4" /> Enviar WA
+                    </button>
+                  </td>
+                  <td className="p-4 text-center">
                     <button onClick={() => togglePago(nota)} className="p-2 rounded-lg hover:bg-zinc-800 transition-colors inline-flex items-center gap-2">
                       {nota.pagado ? (
                         <span className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full"><CheckSquare className="w-5 h-5"/> Pagado</span>
@@ -842,11 +876,17 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
               );
             })}
             {notasFiltradas.length === 0 && (
-              <tr><td colSpan="7" className="p-8 text-center text-zinc-500">No hay documentos con estos filtros.</td></tr>
+              <tr><td colSpan="8" className="p-8 text-center text-zinc-500">No hay documentos con estos filtros.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {notaVisualizando && (
+        <div style={{ position: 'fixed', left: '-9999px', top: '-9999px', zIndex: -1000 }}>
+          <ReciboView receiptData={notaVisualizando} />
+        </div>
+      )}
     </div>
   );
 }
