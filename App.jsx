@@ -433,24 +433,11 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
-  const compartirWhatsApp = async (notaObj = receiptData) => {
+  const compartirWhatsApp = (notaObj = receiptData) => {
     if (!notaObj) return;
-    
-    const element = document.getElementById(`recibo-${notaObj.id || 'final'}`);
-    if (element && window.html2canvas) {
-      try {
-        const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        const link = document.createElement('a');
-        link.download = `Nota_Entrega_${notaObj.numero}.jpg`;
-        link.href = dataUrl;
-        link.click();
-      } catch (e) {
-        console.error("Error descargando imagen para WA", e);
-      }
-    }
-
-    window.open(`https://api.whatsapp.com/send?phone=`, '_blank');
+    // Descarga la imagen y abre WhatsApp de forma directa y limpia
+    descargarImagen('recibo-final');
+    window.open('https://api.whatsapp.com/send?phone=', '_blank');
     showToast("Imagen descargada. Ya puedes adjuntarla en WhatsApp");
   };
 
