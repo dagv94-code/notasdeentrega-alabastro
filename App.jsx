@@ -747,9 +747,9 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
         }
       }
 
-      const detalleItems = (nota.items || []).map(i => `- ${i.descripcion} (${i.peso} kg) - Subtotal: $${i.subtotal.toFixed(2)}`).join('\n');
+      const detalleItems = (nota.items || []).map(i => `- ${i.descripcion} (${i.peso} kg) \`Subtotal: $${i.subtotal.toFixed(2)} REF\``).join('\n');
       
-      const mensaje = `¡Buenos días! ☀️\nEstimado(a) ${nota.cliente?.nombre || 'Cliente'}, te escribimos para saludarte y recordarte amablemente el vencimiento de tu factura pendiente.\nA continuación, los detalles de tu pedido:\n- Nota de Entrega N°: ${nota.numero}\n- Fecha: ${nota.fecha}\n- Detalle:\n${detalleItems}\n- TOTAL A PAGAR: $${parseFloat(nota.total || 0).toFixed(2)} REF\nPuedes realizar tu pago por los siguientes medios:\n🏦 PAGO MÓVIL - TRANSFERENCIA\n- Banco: Mercantil\n- Teléfono: 0424-656 5520\n- Cédula: 22.362.833\n- Nro. Cuenta: 0174011471114416694\n🟡 BINANCE\n- Correo: DAGV94@GMAIL.COM\n- Binance ID: 1254404157\n- Etiqueta/Memo: DAGV-1994\nPor favor, compártenos el capture del pago por aquí una vez lo realices.\n¡Estamos atentos a tus nuevos pedidos! Que tengas un excelente día .`;
+      const mensaje = `¡Buenos días! ☀️\n\nEstimado(a) *${nota.cliente?.nombre || 'Cliente'}*, te escribimos para saludarte y recordarte amablemente el vencimiento de tu factura pendiente.\n\nA continuación, los detalles de tu pedido:\n• *Nota de Entrega N°:* \`${nota.numero}\`\n• *Fecha:* _${nota.fecha}_\n• *Detalle:* \n${detalleItems}\n\n*TOTAL A PAGAR:* \`$${parseFloat(nota.total || 0).toFixed(2)} REF\`\n\nPuedes realizar tu pago por los siguientes medios:\n\n🏦 *PAGO MÓVIL - TRANSFERENCIA*\n- Banco: _Mercantil_\n- Teléfono: \`0424-656 5520\`\n- Cédula: \`22.362.833\`\n- Nro. Cuenta: \`01740111471114416694\`\n\n🟡 *BINANCE*\n- Correo: _DAGV94@GMAIL.COM_\n- Binance ID: \`1254404157\`\n- Etiqueta/Memo: \`DAGV-1994\`\n\nPor favor, compártenos el capture del pago por aquí una vez lo realices.\n\n¡Estamos atentos a tus nuevos pedidos! Que tengas un excelente día. 🐷`;
 
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
       showToast("Imagen de factura descargada y WhatsApp abierto con el recordatorio");
