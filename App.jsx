@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
@@ -87,17 +87,29 @@ export default function AgropecuariaApp() {
       setClientes(cls.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')));
     }, (err) => console.log("Clientes locales"));
 
-    const unsubProductos = onSnapshot(collection(db, ...basePublicPath, 'catalogo'), (snap) => {
+    const unsubProductos = onSnapshot(collection(db, ...basePublicPath, 'catalogo'), async (snap) => {
       const prods = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (prods.length > 0) {
         setProductos(prods.sort((a, b) => (a.codigo || '').localeCompare(b.codigo || '')));
+      } else {
+        try {
+          for (const p of DEFAULT_PRODUCTOS) {
+            await addDoc(collection(db, ...basePublicPath, 'catalogo'), { ...p, creado: serverTimestamp() });
+          }
+        } catch (e) { console.error(e); }
       }
     }, (err) => console.log("Catálogo local"));
 
-    const unsubVendedores = onSnapshot(collection(db, ...basePublicPath, 'vendedores'), (snap) => {
+    const unsubVendedores = onSnapshot(collection(db, ...basePublicPath, 'vendedores'), async (snap) => {
       const vends = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (vends.length > 0) {
         setVendedores(vends.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')));
+      } else {
+        try {
+          for (const v of DEFAULT_VENDEDORES) {
+            await addDoc(collection(db, ...basePublicPath, 'vendedores'), { nombre: v.nombre, creado: serverTimestamp() });
+          }
+        } catch (e) { console.error(e); }
       }
     }, (err) => console.log("Vendedores locales"));
 
@@ -126,7 +138,7 @@ export default function AgropecuariaApp() {
         <div className="max-w-3xl mx-auto flex items-center justify-center gap-3">
           <div className="w-10 h-10 rounded-full bg-rose-600/20 border border-rose-500 flex items-center justify-center text-rose-500 font-black text-lg">A</div>
           <h1 className="text-xl font-black tracking-tight text-white uppercase">
-            Distribuidora <span className="text-rose-500">Alabastro</span>
+            Agropecuaria <span className="text-rose-500">Alabastro</span>
           </h1>
         </div>
       </header>
@@ -202,11 +214,11 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     setItems([...items, {
       id: Date.now().toString(),
       productoId: prod.id,
-      codigo: prod.codigo,
-      descripcion: prod.descripcion,
+      codigo: prod.codigo || '0000',
+      descripcion: prod.descripcion || 'Producto',
       peso: pesoNum,
-      precio: parseFloat(prod.precio),
-      subtotal: pesoNum * parseFloat(prod.precio)
+      precio: parseFloat(prod.precio || 0),
+      subtotal: pesoNum * parseFloat(prod.precio || 0)
     }]);
     setCurrProductoId('');
     setCurrPeso('');
@@ -363,7 +375,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
           <div id="recibo-final" className="bg-white text-black p-8 w-[800px] mx-auto shadow-2xl relative" style={{ fontFamily: "Arial, sans-serif" }}>
             <div className="border-b-4 border-rose-600 pb-4 mb-6 flex justify-between items-center">
               <div>
-                <h1 className="text-3xl font-black uppercase text-zinc-900">Distribuidora <span className="text-rose-600">Alabastro</span></h1>
+                <h1 className="text-3xl font-black uppercase text-zinc-900">Agropecuaria <span className="text-rose-600">Alabastro</span></h1>
                 <p className="text-sm text-zinc-500 font-bold mt-1">agropecuarialabastro@gmail.com</p>
               </div>
               <div className="text-right">
@@ -376,13 +388,13 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
             <div className="grid grid-cols-2 gap-6 mb-6">
               <div className="bg-zinc-50 p-4 rounded-xl border">
                 <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Cliente</h3>
-                <p className="font-bold text-lg">{receiptData.cliente.nombre}</p>
-                <p className="text-sm text-zinc-600 mt-1">{receiptData.cliente.telefono}</p>
-                <p className="text-sm text-zinc-600">{receiptData.cliente.direccion}</p>
+                <p className="font-bold text-lg">{receiptData.cliente?.nombre}</p>
+                <p className="text-sm text-zinc-600 mt-1">{receiptData.cliente?.telefono}</p>
+                <p className="text-sm text-zinc-600">{receiptData.cliente?.direccion}</p>
               </div>
               <div className="bg-zinc-50 p-4 rounded-xl border">
                 <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Vendedor</h3>
-                <p className="font-bold text-lg">{receiptData.vendedor.nombre}</p>
+                <p className="font-bold text-lg">{receiptData.vendedor?.nombre}</p>
                 <p className="text-sm mt-2"><b>Condición de Pago:</b> {receiptData.terminoPago}</p>
               </div>
             </div>
@@ -858,7 +870,7 @@ function VendedoresTab({ showToast, db, vendedores }) {
         {vendedores.map(v => (
           <div key={v.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-rose-600/20 flex items-center justify-center text-rose-500 font-bold">{v.nombre.charAt(0)}</div>
+              <div className="w-8 h-8 rounded-full bg-rose-600/20 flex items-center justify-center text-rose-500 font-bold">{v.nombre ? v.nombre.charAt(0) : 'V'}</div>
               <span className="font-bold text-white">{v.nombre}</span>
             </div>
             <div className="flex gap-1">
