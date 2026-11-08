@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2, Search
+  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -84,20 +84,20 @@ export default function AgropecuariaApp() {
 
     const unsubClientes = onSnapshot(collection(db, ...basePublicPath, 'clientes'), (snap) => {
       const cls = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setClientes(cls.sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setClientes(cls.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')));
     }, (err) => console.log("Clientes locales"));
 
     const unsubProductos = onSnapshot(collection(db, ...basePublicPath, 'catalogo'), (snap) => {
       const prods = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (prods.length > 0) {
-        setProductos(prods.sort((a, b) => a.codigo.localeCompare(b.codigo)));
+        setProductos(prods.sort((a, b) => (a.codigo || '').localeCompare(b.codigo || '')));
       }
     }, (err) => console.log("Catálogo local"));
 
     const unsubVendedores = onSnapshot(collection(db, ...basePublicPath, 'vendedores'), (snap) => {
       const vends = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (vends.length > 0) {
-        setVendedores(vends.sort((a, b) => a.nombre.localeCompare(b.nombre)));
+        setVendedores(vends.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')));
       }
     }, (err) => console.log("Vendedores locales"));
 
@@ -132,7 +132,7 @@ export default function AgropecuariaApp() {
       </header>
 
       <main className="max-w-4xl mx-auto p-4">
-        {activeTab === 'nueva-nota' && <NuevaNotaTab clientes={clientes} productos={productos} vendedores={vendedores} showToast={showToast} db={db} user={user} editingNota={editingNota} setEditingNota={setEditingNota} />}
+        {activeTab === 'nueva-nota' && <NuevaNotaTab clientes={clientes} productos={productos} vendedores={vendedores} showToast={showToast} db={db} user={user} editingNota={editingNota} setEditingNota={setEditingNota} setActiveTab={setActiveTab} />}
         {activeTab === 'historial' && <HistorialTab notas={notas} showToast={showToast} db={db} handleEditNota={handleEditNota} />}
         {activeTab === 'cuentas' && <CuentasPorCobrarTab notas={notas} vendedores={vendedores} showToast={showToast} db={db} />}
         {activeTab === 'clientes' && <ClientesTab showToast={showToast} db={db} user={user} clientes={clientes} />}
@@ -170,7 +170,7 @@ function NavButton({ icon, label, active, onClick }) {
   );
 }
 
-function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, editingNota, setEditingNota }) {
+function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, editingNota, setEditingNota, setActiveTab }) {
   const [clienteId, setClienteId] = useState('');
   const [vendedorId, setVendedorId] = useState('');
   const [terminoPago, setTerminoPago] = useState('Contado');
@@ -183,10 +183,10 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
 
   useEffect(() => {
     if (editingNota) {
-      setClienteId(editingNota.cliente.id);
-      setVendedorId(editingNota.vendedor.id);
-      setTerminoPago(editingNota.terminoPago);
-      setItems(editingNota.items);
+      setClienteId(editingNota.cliente?.id || '');
+      setVendedorId(editingNota.vendedor?.id || '');
+      setTerminoPago(editingNota.terminoPago || 'Contado');
+      setItems(editingNota.items || []);
       setIsTotalized(false);
       setReceiptData(null);
     }
@@ -225,25 +225,29 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       const vendedor = vendedores.find(v => v.id === vendedorId) || { nombre: 'Vendedor' };
       
       let currentNumber = 1;
-      let timestamp = Date.now();
+      let timestamp = editingNota ? editingNota.timestamp : Date.now();
 
-      try {
-        const seqRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'secuencia');
-        let seqDoc = await getDoc(seqRef);
-        if (seqDoc.exists()) {
-          const dataVal = seqDoc.data().valor;
-          currentNumber = (typeof dataVal === 'number' ? dataVal : parseInt(dataVal) || 0) + 1;
-          await updateDoc(seqRef, { valor: currentNumber });
-        } else {
-          await setDoc(seqRef, { valor: 1 });
-          currentNumber = 1;
+      if (!editingNota) {
+        try {
+          const seqRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'secuencia');
+          let seqDoc = await getDoc(seqRef);
+          if (seqDoc.exists()) {
+            const dataVal = seqDoc.data().valor;
+            currentNumber = (typeof dataVal === 'number' ? dataVal : parseInt(dataVal) || 0) + 1;
+            await updateDoc(seqRef, { valor: currentNumber });
+          } else {
+            await setDoc(seqRef, { valor: 1 });
+            currentNumber = 1;
+          }
+        } catch (e) {
+          currentNumber = Math.floor(Math.random() * 90000) + 10000;
         }
-      } catch (e) {
-        currentNumber = Math.floor(Math.random() * 90000) + 10000;
+      } else {
+        currentNumber = parseInt(editingNota.numero) || 1;
       }
 
       const total = items.reduce((acc, item) => acc + item.subtotal, 0);
-      const dateObj = new Date();
+      const dateObj = new Date(timestamp);
       const fecha8 = `${dateObj.getDate().toString().padStart(2, '0')}/${(dateObj.getMonth()+1).toString().padStart(2, '0')}/${dateObj.getFullYear()}`;
 
       const finalReceiptData = {
@@ -255,18 +259,23 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         terminoPago,
         items,
         total,
-        pagado: false,
-        estado: 'activo'
+        pagado: editingNota ? editingNota.pagado : false,
+        estado: editingNota ? editingNota.estado : 'activo'
       };
 
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'notas'), finalReceiptData);
-      showToast("Nota creada y guardada");
+      if (editingNota) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', editingNota.id), finalReceiptData);
+        showToast("Nota actualizada correctamente");
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'notas'), finalReceiptData);
+        showToast("Nota creada y guardada");
+      }
 
       setReceiptData(finalReceiptData);
       setIsTotalized(true);
     } catch (error) {
       console.error(error);
-      showToast("Error al guardar nota");
+      showToast("Error al procesar nota");
     } finally {
       setGenerating(false);
     }
@@ -294,19 +303,60 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
+  const compartirWhatsApp = async () => {
+    if (!window.html2canvas) return showToast("Cargando generador...");
+    const element = document.getElementById('recibo-final');
+    if (!element) return;
+
+    try {
+      setGenerating(true);
+      const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], `Recibo_Alabastro_${receiptData.numero}.jpg`, { type: 'image/jpeg' });
+      
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `Nota N° ${receiptData.numero}`,
+          text: `Hola, adjunto nota de entrega N° ${receiptData.numero} por un total de $${receiptData.total.toFixed(2)} REF.`,
+          files: [file]
+        });
+      } else {
+        const link = document.createElement('a');
+        link.download = `Recibo_Alabastro_${receiptData.numero}.jpg`;
+        link.href = dataUrl;
+        link.click();
+        window.open(`https://api.whatsapp.com/send?text=Hola, adjunto los detalles de la nota N° ${receiptData.numero}. (Por favor adjunta la imagen descargada)`, '_blank');
+      }
+    } catch (e) {
+      showToast("Error al compartir en WhatsApp");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const reiniciar = () => {
     setIsTotalized(false);
     setReceiptData(null);
     setItems([]);
     setClienteId('');
+    setEditingNota(null);
   };
 
   if (isTotalized && receiptData) {
     return (
       <div className="space-y-6">
-        <div className="flex justify-between items-center bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
-          <button onClick={reiniciar} className="flex items-center text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5 mr-2" /> Atrás</button>
-          <button onClick={descargarImagen} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center"><Download className="w-5 h-5 mr-2" /> Descargar Recibo</button>
+        <div className="flex flex-wrap justify-between items-center bg-zinc-900 p-4 rounded-2xl border border-zinc-800 gap-3">
+          <button onClick={reiniciar} className="flex items-center text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5 mr-2" /> Atrás / Nueva Nota</button>
+          <div className="flex gap-2">
+            <button onClick={descargarImagen} disabled={generating} className="bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
+              <Download className="w-5 h-5 mr-2" /> Descargar Imagen
+            </button>
+            <button onClick={compartirWhatsApp} disabled={generating} className="bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2 rounded-xl font-bold flex items-center shadow">
+              <Share2 className="w-5 h-5 mr-2" /> WhatsApp
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto pb-8">
@@ -317,7 +367,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
                 <p className="text-sm text-zinc-500 font-bold mt-1">agropecuarialabastro@gmail.com</p>
               </div>
               <div className="text-right">
-                <h2 className="text-2xl font-black text-rose-600">RECIBO DE COMPRA</h2>
+                <h2 className="text-2xl font-black text-rose-600">NOTA DE ENTREGA</h2>
                 <div className="mt-2 text-lg font-bold">N° {receiptData.numero}</div>
                 <div className="text-sm text-zinc-600">FECHA: {receiptData.fecha}</div>
               </div>
@@ -327,11 +377,13 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
               <div className="bg-zinc-50 p-4 rounded-xl border">
                 <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Cliente</h3>
                 <p className="font-bold text-lg">{receiptData.cliente.nombre}</p>
+                <p className="text-sm text-zinc-600 mt-1">{receiptData.cliente.telefono}</p>
+                <p className="text-sm text-zinc-600">{receiptData.cliente.direccion}</p>
               </div>
               <div className="bg-zinc-50 p-4 rounded-xl border">
                 <h3 className="text-xs font-bold text-rose-600 uppercase mb-2">Vendedor</h3>
                 <p className="font-bold text-lg">{receiptData.vendedor.nombre}</p>
-                <p className="text-sm mt-2"><b>Pago:</b> {receiptData.terminoPago}</p>
+                <p className="text-sm mt-2"><b>Condición de Pago:</b> {receiptData.terminoPago}</p>
               </div>
             </div>
 
@@ -340,9 +392,9 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
                 <tr className="bg-zinc-900 text-white">
                   <th className="py-2 px-3 text-left">COD</th>
                   <th className="py-2 px-3 text-left">DESCRIPCIÓN</th>
-                  <th className="py-2 px-3 text-right">PESO</th>
-                  <th className="py-2 px-3 text-right">PRECIO</th>
-                  <th className="py-2 px-3 text-right">SUBTOTAL</th>
+                  <th className="py-2 px-3 text-right">PESO (KG)</th>
+                  <th className="py-2 px-3 text-right">PRECIO REF</th>
+                  <th className="py-2 px-3 text-right">SUBTOTAL REF</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200">
@@ -364,6 +416,10 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
                 <span className="text-xl font-black">{receiptData.total.toFixed(2)} REF</span>
               </div>
             </div>
+
+            <div className="text-center text-xs text-zinc-500 border-t pt-4 font-bold uppercase">
+              Tasa BCV Euro establecida por el Banco Central de Venezuela el día de su cancelación.
+            </div>
           </div>
         </div>
       </div>
@@ -374,21 +430,21 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     <div className="space-y-6 animate-in fade-in">
       <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
         <h2 className="text-xl font-black flex items-center gap-2 border-b border-zinc-800 pb-3">
-          <FileText className="text-rose-500" /> Crear Nota de Entrega
+          <FileText className="text-rose-500" /> {editingNota ? `Editando Nota N° ${editingNota.numero}` : 'Crear Nota de Entrega'}
         </h2>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-zinc-400 uppercase">Cliente (Autocompletable)</label>
-            <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none">
-              <option value="">Seleccione o busque cliente...</option>
+            <label className="text-xs font-bold text-zinc-400 uppercase">Cliente</label>
+            <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+              <option value="">Seleccione Cliente...</option>
               {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-bold text-zinc-400 uppercase">Vendedor</label>
-            <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none">
+            <select value={vendedorId} onChange={(e) => setVendedorId(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
               <option value="">Seleccione Vendedor...</option>
               {vendedores.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select>
@@ -410,14 +466,14 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
         <h3 className="text-lg font-bold text-zinc-200">Agregar Productos</h3>
         <div className="flex gap-2 flex-col sm:flex-row">
-          <select value={currProductoId} onChange={(e) => setCurrProductoId(e.target.value)} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none">
+          <select value={currProductoId} onChange={(e) => setCurrProductoId(e.target.value)} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
             <option value="">Buscar en catálogo...</option>
             {productos.map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.descripcion} (${p.precio})</option>)}
           </select>
           
           <div className="flex gap-2">
-            <input type="number" step="0.01" placeholder="Peso/Cant" value={currPeso} onChange={(e) => setCurrPeso(e.target.value)} className="w-32 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
-            <button onClick={addItem} className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-xl"><Plus className="w-6 h-6" /></button>
+            <input type="number" step="0.01" placeholder="Peso/Cant" value={currPeso} onChange={(e) => setCurrPeso(e.target.value)} className="w-32 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
+            <button onClick={addItem} className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-xl transition-colors"><Plus className="w-6 h-6" /></button>
           </div>
         </div>
 
@@ -448,36 +504,151 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
       </div>
 
       {items.length > 0 && (
-        <button onClick={totalizar} disabled={generating} className="w-full bg-rose-600 hover:bg-rose-500 text-white p-4 rounded-2xl font-black text-lg uppercase">
-          {generating ? 'Procesando...' : 'Totalizar y Generar Recibo'}
+        <button onClick={totalizar} disabled={generating} className="w-full bg-rose-600 hover:bg-rose-500 text-white p-4 rounded-2xl font-black text-lg uppercase shadow-lg shadow-rose-600/20">
+          {generating ? 'Procesando...' : (editingNota ? 'Actualizar Nota de Entrega' : 'Totalizar y Generar Nota')}
         </button>
       )}
     </div>
   );
 }
 
-function HistorialTab({ notas }) {
+function HistorialTab({ notas, showToast, db, handleEditNota }) {
+  const anularNota = async (notaId) => {
+    if (!window.confirm("¿Seguro que deseas anular este documento? Se mantendrá el número pero tachado.")) return;
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', notaId), { estado: 'anulado' });
+      showToast("Nota anulada correctamente");
+    } catch (e) {
+      showToast("Error al anular");
+    }
+  };
+
   return (
     <div className="space-y-4 pb-10">
-      <h2 className="text-xl font-black border-b border-zinc-800 pb-3">Historial de Notas</h2>
+      <h2 className="text-xl font-black border-b border-zinc-800 pb-3 flex items-center gap-2">
+        <History className="text-rose-500" /> Historial de Notas
+      </h2>
       {notas.length === 0 && <div className="text-center text-zinc-500 py-10">No hay notas registradas todavía.</div>}
       <div className="grid gap-4">
-        {notas.map(nota => (
-          <div key={nota.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex justify-between items-center">
-            <div>
-              <span className="font-mono text-rose-500 font-bold">#{nota.numero}</span> <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded">{nota.fecha}</span>
-              <h3 className="font-bold text-lg">{nota.cliente?.nombre}</h3>
+        {notas.map(nota => {
+          const isAnulado = nota.estado === 'anulado';
+          return (
+            <div key={nota.id} className={`bg-zinc-900 border ${isAnulado ? 'border-red-900/50 opacity-75' : 'border-zinc-800'} rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`font-mono font-bold ${isAnulado ? 'text-red-500 line-through' : 'text-rose-500'}`}>#{nota.numero}</span>
+                  <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded text-zinc-300">{nota.fecha}</span>
+                  {isAnulado && <span className="bg-red-500/20 text-red-400 text-xs font-bold px-2 py-0.5 rounded">DOCUMENTO ANULADO</span>}
+                </div>
+                <h3 className={`font-bold text-lg mt-1 ${isAnulado ? 'line-through text-zinc-500' : 'text-white'}`}>{nota.cliente?.nombre}</h3>
+                <p className="text-xs text-zinc-400">Vendedor: {nota.vendedor?.nombre} • {nota.terminoPago}</p>
+              </div>
+              <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+                <span className={`text-xl font-black ${isAnulado ? 'line-through text-zinc-600' : 'text-white'}`}>${parseFloat(nota.total || 0).toFixed(2)}</span>
+                <div className="flex gap-2">
+                  <button onClick={() => handleEditNota(nota)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 text-blue-400 rounded-lg transition-all" title="Modificar">
+                    <Edit className="w-5 h-5" />
+                  </button>
+                  <button onClick={() => anularNota(nota.id)} disabled={isAnulado} className="p-2 bg-zinc-800 hover:bg-red-900/50 disabled:opacity-30 text-red-500 rounded-lg transition-all" title="Anular">
+                    <Ban className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="text-xl font-black">${parseFloat(nota.total).toFixed(2)}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function CuentasPorCobrarTab() {
-  return <div className="p-5 text-center text-zinc-400">Módulo de Cuentas por Cobrar Activo</div>;
+function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
+  const [filtroVendedor, setFiltroVendedor] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('pendientes');
+
+  const togglePago = async (nota) => {
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', nota.id), { pagado: !nota.pagado });
+      showToast(nota.pagado ? "Marcado como pendiente" : "Pago registrado con éxito");
+    } catch (e) {
+      showToast("Error al actualizar pago");
+    }
+  };
+
+  const notasFiltradas = notas.filter(nota => {
+    if (nota.estado === 'anulado') return false;
+    if (filtroVendedor && nota.vendedor?.id !== filtroVendedor) return false;
+    if (filtroEstado === 'pendientes' && nota.pagado) return false;
+    if (filtroEstado === 'pagados' && !nota.pagado) return false;
+    return true;
+  });
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
+        <h2 className="text-xl font-black flex items-center gap-2 border-b border-zinc-800 pb-3">
+          <Wallet className="text-rose-500" /> Cuentas por Cobrar (Estado de Cuenta)
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Filtrar por Vendedor</label>
+            <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+              <option value="">Todos los vendedores</option>
+              {vendedores.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Estatus de Pago</label>
+            <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+              <option value="pendientes">Solo Pendientes</option>
+              <option value="pagados">Solo Pagados</option>
+              <option value="todos">Todos</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto bg-zinc-900 rounded-xl border border-zinc-800 shadow-lg">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-zinc-950 text-zinc-400">
+            <tr>
+              <th className="p-4">Nota</th>
+              <th className="p-4">Cliente / Vendedor</th>
+              <th className="p-4">Condición</th>
+              <th className="p-4">Total</th>
+              <th className="p-4 text-center">Registrar Pago</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800/50">
+            {notasFiltradas.map(nota => (
+              <tr key={nota.id} className="hover:bg-zinc-800/30">
+                <td className="p-4 font-mono font-bold text-rose-500">#{nota.numero}</td>
+                <td className="p-4">
+                  <div className="font-bold text-white">{nota.cliente?.nombre}</div>
+                  <div className="text-xs text-zinc-500">{nota.vendedor?.nombre} • {nota.fecha}</div>
+                </td>
+                <td className="p-4 text-zinc-300">{nota.terminoPago}</td>
+                <td className="p-4 font-black text-white">${parseFloat(nota.total || 0).toFixed(2)} REF</td>
+                <td className="p-4 text-center">
+                  <button onClick={() => togglePago(nota)} className="p-2 rounded-lg hover:bg-zinc-800 transition-colors inline-flex items-center gap-2">
+                    {nota.pagado ? (
+                      <span className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full"><CheckSquare className="w-5 h-5"/> Pagado</span>
+                    ) : (
+                      <span className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20"><Square className="w-5 h-5"/> Marcar Pago</span>
+                    )}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {notasFiltradas.length === 0 && (
+              <tr><td colSpan="5" className="p-8 text-center text-zinc-500">No hay documentos en este estado.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function ClientesTab({ showToast, db, clientes }) {
@@ -485,6 +656,11 @@ function ClientesTab({ showToast, db, clientes }) {
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
   const [busqueda, setBusqueda] = useState('');
+
+  const [clienteEditando, setClienteEditando] = useState(null);
+  const [editNombre, setEditNombre] = useState('');
+  const [editTelefono, setEditTelefono] = useState('');
+  const [editDireccion, setEditDireccion] = useState('');
 
   const addCliente = async (e) => {
     e.preventDefault();
@@ -494,48 +670,34 @@ function ClientesTab({ showToast, db, clientes }) {
         nombre: nombre.trim(), telefono: telefono.trim(), direccion: direccion.trim(), creado: serverTimestamp()
       });
       setNombre(''); setTelefono(''); setDireccion('');
-      showToast("Cliente guardado en la nube");
-    } catch(e) { showToast("Error al guardar cliente"); }
+      showToast("Cliente guardado");
+    } catch(e) { showToast("Error al guardar"); }
   };
 
   const eliminarCliente = async (id) => {
     if (!window.confirm("¿Seguro que deseas eliminar este cliente?")) return;
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', id));
-      showToast("Cliente eliminado con éxito");
-    } catch (e) {
-      showToast("Error al eliminar");
-    }
+      showToast("Cliente eliminado");
+    } catch (e) { showToast("Error al eliminar"); }
   };
 
-  const clientesFiltrados = clientes.filter(c => 
-    c.nombre.toLowerCase().includes(busqueda.toLowerCase())
-  );
+  const clientesFiltrados = clientes.filter(c => (c.nombre || '').toLowerCase().includes(busqueda.toLowerCase()));
 
   return (
-    <div className="space-y-6">
-      <form onSubmit={addCliente} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4">
-        <h2 className="text-xl font-black">Nuevo Cliente</h2>
-        <input placeholder="Nombre y Apellido" value={nombre} onChange={e => setNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white" />
-        <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white" />
-        <textarea placeholder="Dirección" value={direccion} onChange={e => setDireccion(e.target.value)} rows="2" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white resize-none" />
-        <button type="submit" className="w-full bg-rose-600 text-white font-bold py-3 rounded-xl">Guardar Cliente</button>
+    <div className="space-y-6 pb-10">
+      <form onSubmit={addCliente} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4 shadow-xl">
+        <h2 className="text-xl font-black flex items-center gap-2"><Users className="text-rose-500"/> Nuevo Cliente</h2>
+        <input placeholder="Nombre y Apellido" value={nombre} onChange={e => setNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" />
+        <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" />
+        <textarea placeholder="Dirección" value={direccion} onChange={e => setDireccion(e.target.value)} rows="2" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white resize-none outline-none focus:border-rose-500" />
+        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl">Guardar Cliente</button>
       </form>
 
       <div className="space-y-3">
-        <div className="flex justify-between items-center">
-          <h3 className="font-bold text-zinc-400 uppercase text-xs">Directorio ({clientesFiltrados.length})</h3>
-        </div>
-        
         <div className="relative">
           <Search className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
-          <input 
-            type="text" 
-            placeholder="Buscar cliente (ej. escribe 'd')..." 
-            value={busqueda} 
-            onChange={e => setBusqueda(e.target.value)} 
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-rose-500" 
-          />
+          <input type="text" placeholder="Buscar cliente por nombre..." value={busqueda} onChange={e => setBusqueda(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-rose-500" />
         </div>
 
         {clientesFiltrados.map(c => (
@@ -544,41 +706,184 @@ function ClientesTab({ showToast, db, clientes }) {
               <div className="font-bold text-white text-lg">{c.nombre}</div>
               <div className="text-sm text-zinc-400">{c.telefono} • {c.direccion}</div>
             </div>
-            <button onClick={() => eliminarCliente(c.id)} className="p-2 bg-zinc-800 hover:bg-red-900/50 text-red-500 rounded-lg transition-all shadow" title="Eliminar cliente">
-              <Trash2 className="w-5 h-5" />
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => { setClienteEditando(c.id); setEditNombre(c.nombre); setEditTelefono(c.telefono || ''); setEditDireccion(c.direccion || ''); }} className="p-2 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded-lg" title="Editar"><Edit className="w-5 h-5"/></button>
+              <button onClick={() => eliminarCliente(c.id)} className="p-2 bg-zinc-800 hover:bg-red-900/50 text-red-500 rounded-lg" title="Eliminar"><Trash2 className="w-5 h-5"/></button>
+            </div>
           </div>
         ))}
-        {clientesFiltrados.length === 0 && <div className="text-center text-zinc-500 py-4">No se encontraron clientes.</div>}
+        {clientesFiltrados.length === 0 && <div className="text-center text-zinc-500 py-4">No hay clientes.</div>}
       </div>
+
+      {clienteEditando && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-black text-rose-500">Editar Cliente</h3>
+            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
+            <input value={editTelefono} onChange={e => setEditTelefono(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
+            <textarea value={editDireccion} onChange={e => setEditDireccion(e.target.value)} rows="2" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white resize-none outline-none" />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setClienteEditando(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
+              <button onClick={async () => {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clienteEditando), { nombre: editNombre.trim(), telefono: editTelefono.trim(), direccion: editDireccion.trim() });
+                setClienteEditando(null); showToast("Cliente actualizado");
+              }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CatalogoTab({ productos }) {
+function CatalogoTab({ showToast, db, productos }) {
+  const [codigo, setCodigo] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [precio, setPrecio] = useState('');
+
+  const [prodEditando, setProdEditando] = useState(null);
+  const [editCodigo, setEditCodigo] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editPrecio, setEditPrecio] = useState('');
+
+  const addProducto = async (e) => {
+    e.preventDefault();
+    if(!codigo.trim() || !descripcion.trim() || !precio) return showToast("Faltan datos");
+    const finalCode = codigo.padStart(4, '0').slice(0, 4);
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'catalogo'), {
+        codigo: finalCode, descripcion: descripcion.trim(), precio: parseFloat(precio), creado: serverTimestamp()
+      });
+      setCodigo(''); setDescripcion(''); setPrecio('');
+      showToast("Producto guardado");
+    } catch(e) { showToast("Error al guardar"); }
+  };
+
+  const eliminarProducto = async (id) => {
+    if (!window.confirm("¿Eliminar este producto del catálogo?")) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'catalogo', id));
+      showToast("Producto eliminado");
+    } catch(e) { showToast("Error al eliminar"); }
+  };
+
   return (
-    <div className="space-y-3">
-      <h3 className="font-bold text-zinc-400 uppercase text-xs">Catálogo de Productos</h3>
-      {productos.map(p => (
-        <div key={p.id} className="bg-zinc-900 p-3 rounded-xl border flex justify-between items-center">
-          <span className="bg-zinc-800 text-xs px-2 py-1 rounded">{p.codigo}</span>
-          <span className="font-bold">{p.descripcion}</span>
-          <span className="text-rose-500 font-black">${parseFloat(p.precio).toFixed(2)}</span>
+    <div className="space-y-6 pb-10">
+      <form onSubmit={addProducto} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4 shadow-xl">
+        <h2 className="text-xl font-black flex items-center gap-2"><Tag className="text-rose-500"/> Nuevo Producto</h2>
+        <div className="flex gap-3">
+          <input placeholder="Código (ej. 0010)" value={codigo} onChange={e => setCodigo(e.target.value)} maxLength={4} className="w-1/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none font-mono" />
+          <input placeholder="Precio REF" type="number" step="0.01" value={precio} onChange={e => setPrecio(e.target.value)} className="w-2/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
         </div>
-      ))}
+        <input placeholder="Descripción del producto" value={descripcion} onChange={e => setDescripcion(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
+        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl">Guardar Producto</button>
+      </form>
+
+      <div className="space-y-3">
+        <h3 className="font-bold text-zinc-400 uppercase text-xs">Inventario Disponible ({productos.length})</h3>
+        {productos.map(p => (
+          <div key={p.id} className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 flex justify-between items-center gap-3">
+            <div className="flex items-center gap-3">
+              <span className="bg-zinc-800 text-zinc-300 font-mono text-xs px-2 py-1 rounded">{p.codigo}</span>
+              <span className="font-bold text-white">{p.descripcion}</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="font-black text-rose-500">${parseFloat(p.precio || 0).toFixed(2)}</span>
+              <div className="flex gap-1">
+                <button onClick={() => { setProdEditando(p.id); setEditCodigo(p.codigo); setEditDesc(p.descripcion); setEditPrecio(p.precio); }} className="p-2 bg-zinc-800 text-blue-400 rounded-lg" title="Editar"><Edit className="w-4 h-4"/></button>
+                <button onClick={() => eliminarProducto(p.id)} className="p-2 bg-zinc-800 text-red-500 rounded-lg" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {prodEditando && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-black text-rose-500">Editar Producto</h3>
+            <div className="flex gap-3">
+              <input value={editCodigo} onChange={e => setEditCodigo(e.target.value)} maxLength={4} className="w-1/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none font-mono" />
+              <input value={editPrecio} onChange={e => setEditPrecio(e.target.value)} type="number" step="0.01" className="w-2/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
+            </div>
+            <input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setProdEditando(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
+              <button onClick={async () => {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'catalogo', prodEditando), { codigo: editCodigo.padStart(4, '0'), descripcion: editDesc.trim(), precio: parseFloat(editPrecio) });
+                setProdEditando(null); showToast("Producto actualizado");
+              }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function VendedoresTab({ vendedores }) {
+function VendedoresTab({ showToast, db, vendedores }) {
+  const [nombre, setNombre] = useState('');
+  const [vendEditando, setVendEditando] = useState(null);
+  const [editNombre, setEditNombre] = useState('');
+
+  const addVendedor = async (e) => {
+    e.preventDefault();
+    if(!nombre.trim()) return showToast("Nombre requerido");
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'vendedores'), {
+        nombre: nombre.trim(), creado: serverTimestamp()
+      });
+      setNombre('');
+      showToast("Vendedor registrado");
+    } catch(e) { showToast("Error al guardar"); }
+  };
+
+  const eliminarVendedor = async (id) => {
+    if (!window.confirm("¿Eliminar este vendedor?")) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vendedores', id));
+      showToast("Vendedor eliminado");
+    } catch(e) { showToast("Error al eliminar"); }
+  };
+
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {vendedores.map(v => (
-        <div key={v.id} className="bg-zinc-900 p-4 rounded-xl border flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-rose-600/20 flex items-center justify-center text-rose-500 font-bold">{v.nombre.charAt(0)}</div>
-          <span className="font-bold">{v.nombre}</span>
+    <div className="space-y-6 pb-10">
+      <form onSubmit={addVendedor} className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4 shadow-xl">
+        <h2 className="text-xl font-black flex items-center gap-2"><UserCheck className="text-rose-500"/> Registrar Vendedor</h2>
+        <input placeholder="Nombre del Vendedor" value={nombre} onChange={e => setNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" />
+        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl">Guardar Vendedor</button>
+      </form>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {vendedores.map(v => (
+          <div key={v.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-rose-600/20 flex items-center justify-center text-rose-500 font-bold">{v.nombre.charAt(0)}</div>
+              <span className="font-bold text-white">{v.nombre}</span>
+            </div>
+            <div className="flex gap-1">
+              <button onClick={() => { setVendEditando(v.id); setEditNombre(v.nombre); }} className="p-2 bg-zinc-800 text-blue-400 rounded-lg" title="Editar"><Edit className="w-4 h-4"/></button>
+              <button onClick={() => eliminarVendedor(v.id)} className="p-2 bg-zinc-800 text-red-500 rounded-lg" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {vendEditando && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-black text-rose-500">Editar Vendedor</h3>
+            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setVendEditando(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
+              <button onClick={async () => {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vendedores', vendEditando), { nombre: editNombre.trim() });
+                setVendEditando(null); showToast("Vendedor actualizado");
+              }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
+            </div>
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
