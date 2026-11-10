@@ -68,6 +68,20 @@ export default function AgropecuariaApp() {
       script.async = true;
       document.body.appendChild(script);
     }
+    if (!document.getElementById('jspdf-script')) {
+      const scriptPdf = document.createElement('script');
+      scriptPdf.id = 'jspdf-script';
+      scriptPdf.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      scriptPdf.async = true;
+      document.body.appendChild(scriptPdf);
+    }
+    if (!document.getElementById('jspdf-autotable-script')) {
+      const scriptTable = document.createElement('script');
+      scriptTable.id = 'jspdf-autotable-script';
+      scriptTable.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js";
+      scriptTable.async = true;
+      document.body.appendChild(scriptTable);
+    }
   }, []);
 
   useEffect(() => {
@@ -157,7 +171,7 @@ export default function AgropecuariaApp() {
         {activeTab === 'nueva-nota' && <NuevaNotaTab clientes={clientes} productos={productos} vendedores={vendedores} showToast={showToast} db={db} user={user} editingNota={editingNota} setEditingNota={setEditingNota} setActiveTab={setActiveTab} />}
         {activeTab === 'historial' && <HistorialTab notas={notas} showToast={showToast} db={db} handleEditNota={handleEditNota} />}
         {activeTab === 'cuentas' && <CuentasPorCobrarTab notas={notas} vendedores={vendedores} showToast={showToast} db={db} />}
-        {activeTab === 'reportes' && <ReportesTab notas={notas} clientes={clientes} productos={productos} vendedores={vendedores} />}
+        {activeTab === 'reportes' && <ReportesTab notas={notas} clientes={clientes} productos={productos} vendedores={vendedores} showToast={showToast} />}
         {activeTab === 'clientes' && <ClientesTab showToast={showToast} db={db} user={user} clientes={clientes} />}
         {activeTab === 'catalogo' && <CatalogoTab showToast={showToast} db={db} user={user} productos={productos} />}
         {activeTab === 'vendedores' && <VendedoresTab showToast={showToast} db={db} user={user} vendedores={vendedores} />}
@@ -983,18 +997,16 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
   );
 }
 
-function ReportesTab({ notas, clientes, productos, vendedores }) {
+function ReportesTab({ notas, clientes, productos, vendedores, showToast }) {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [clienteFiltro, setClienteFiltro] = useState('');
   const [productoFiltro, setProductoFiltro] = useState('');
   const [vendedorFiltro, setVendedorFiltro] = useState('');
 
-  // Filtrado de notas
   const notasReporte = notas.filter(nota => {
     if (nota.estado === 'anulado') return false;
 
-    // Filtro por fecha timestamp (nota.timestamp)
     if (fechaInicio) {
       const startMs = new Date(fechaInicio + 'T00:00:00').getTime();
       if (nota.timestamp < startMs) return false;
@@ -1015,7 +1027,6 @@ function ReportesTab({ notas, clientes, productos, vendedores }) {
     return true;
   });
 
-  // Métricas
   const totalVentas = notasReporte.reduce((acc, n) => acc + parseFloat(n.total || 0), 0);
   const totalNotas = notasReporte.length;
 
@@ -1025,7 +1036,6 @@ function ReportesTab({ notas, clientes, productos, vendedores }) {
   const notasPendientes = notasReporte.filter(n => !n.pagado);
   const totalPendiente = notasPendientes.reduce((acc, n) => acc + parseFloat(n.total || 0), 0);
 
-  // Desglose cobrado por modalidad
   const cobradoPorModalidad = {
     'Divisas en efectivo': 0,
     'Bolívares en efectivo': 0,
@@ -1042,12 +1052,80 @@ function ReportesTab({ notas, clientes, productos, vendedores }) {
     }
   });
 
+  const exportarPDF = () => {
+    if (!window.jspdf) {
+      return showToast("Librería PDF cargando, intente de nuevo en unos segundos");
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(225, 29, 72);
+    doc.text("AGROPECUARIA ALABASTRO", 14, 15);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("Reporte de Ventas y Cobranza", 14, 21);
+    doc.text(`Periodo: ${fechaInicio || 'Inicio'} al ${fechaFin || 'Hoy'}`, 14, 27);
+
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    doc.text(`Total Ventas: $${totalVentas.toFixed(2)} REF (${totalNotas} notas)`, 14, 38);
+    doc.text(`Ingresos Cobrados: $${totalCobrado.toFixed(2)} REF`, 14, 44);
+    doc.text(`Saldos Pendientes: $${totalPendiente.toFixed(2)} REF`, 14, 50);
+
+    let startY = 60;
+    doc.setFont("helvetica", "bold");
+    doc.text("Ingresos por Modalidad:", 14, startY);
+    startY += 6;
+
+    const modRows = Object.entries(cobradoPorModalidad).map(([m, val]) => [m, `$${val.toFixed(2)} REF`]);
+    doc.autoTable({
+      startY,
+      head: [['Modalidad de Pago', 'Monto Cobrado']],
+      body: modRows,
+      theme: 'grid',
+      headStyles: { fillColor: [225, 29, 72] }
+    });
+
+    startY = doc.lastAutoTable.finalY + 10;
+    doc.setFont("helvetica", "bold");
+    doc.text("Detalle de Transacciones:", 14, startY);
+    startY += 6;
+
+    const tableRows = notasReporte.map(n => [
+      `#${n.numero}`,
+      n.fecha,
+      n.cliente?.nombre || 'General',
+      n.vendedor?.nombre || '-',
+      n.pagado ? `Pagado (${n.metodoPago || 'Efectivo'})` : 'Pendiente',
+      `$${parseFloat(n.total || 0).toFixed(2)} REF`
+    ]);
+
+    doc.autoTable({
+      startY,
+      head: [['Nota', 'Fecha', 'Cliente', 'Vendedor', 'Estatus', 'Total']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [24, 24, 27] }
+    });
+
+    doc.save(`Reporte_Alabastro_${new Date().toISOString().slice(0, 10)}.pdf`);
+    showToast("Reporte PDF exportado con éxito");
+  };
+
   return (
     <div className="space-y-6 pb-10">
       <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
-        <h2 className="text-xl font-black flex items-center gap-2 border-b border-zinc-800 pb-3">
-          <BarChart3 className="text-rose-500" /> Reportes de Ventas y Cobranza
-        </h2>
+        <div className="flex flex-wrap justify-between items-center border-b border-zinc-800 pb-3 gap-2">
+          <h2 className="text-xl font-black flex items-center gap-2">
+            <BarChart3 className="text-rose-500" /> Reportes de Ventas y Cobranza
+          </h2>
+          <button onClick={exportarPDF} className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow transition-all">
+            <Download className="w-4 h-4" /> Exportar Reporte PDF
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-1">
@@ -1087,7 +1165,6 @@ function ReportesTab({ notas, clientes, productos, vendedores }) {
         </div>
       </div>
 
-      {/* Tarjetas resumen */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-lg space-y-1">
           <span className="text-xs font-bold text-zinc-400 uppercase">Total Ventas (Facturado)</span>
@@ -1106,7 +1183,6 @@ function ReportesTab({ notas, clientes, productos, vendedores }) {
         </div>
       </div>
 
-      {/* Desglose por modalidad de cobro */}
       <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-3">
         <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Ingresos Percibidos por Modalidad de Pago</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -1119,7 +1195,6 @@ function ReportesTab({ notas, clientes, productos, vendedores }) {
         </div>
       </div>
 
-      {/* Detalle de notas en el reporte */}
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 shadow-lg overflow-hidden">
         <div className="p-4 border-b border-zinc-800 font-bold text-sm text-zinc-300">
           Notas Incluidas en el Reporte ({notasReporte.length})
