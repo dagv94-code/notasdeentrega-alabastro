@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp, setDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban
+  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Settings, RotateCcw, KeyRound, AlertTriangle
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -143,7 +143,7 @@ export default function AgropecuariaApp() {
   if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-rose-500 font-bold animate-pulse">Cargando Sistema Alabastro...</div>;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24 selection:bg-rose-500/30">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-28 selection:bg-rose-500/30">
       <header className="bg-zinc-900 border-b border-zinc-800 p-4 sticky top-0 z-10 shadow-lg">
         <div className="max-w-3xl mx-auto flex items-center justify-center gap-3">
           <div className="w-10 h-10 rounded-full bg-rose-600/20 border border-rose-500 flex items-center justify-center text-rose-500 font-black text-lg">A</div>
@@ -160,16 +160,20 @@ export default function AgropecuariaApp() {
         {activeTab === 'clientes' && <ClientesTab showToast={showToast} db={db} user={user} clientes={clientes} />}
         {activeTab === 'catalogo' && <CatalogoTab showToast={showToast} db={db} user={user} productos={productos} />}
         {activeTab === 'vendedores' && <VendedoresTab showToast={showToast} db={db} user={user} vendedores={vendedores} />}
+        {activeTab === 'configuracion' && <ConfiguracionTab showToast={showToast} />}
+        {activeTab === 'reiniciar' && <ReiniciarTab showToast={showToast} db={db} notas={notas} clientes={clientes} productos={productos} vendedores={vendedores} />}
       </main>
 
-      <nav className="fixed bottom-0 w-full bg-zinc-900 border-t border-zinc-800 pb-safe overflow-x-auto no-scrollbar">
-        <div className="flex justify-between min-w-[600px] p-2 px-4 gap-2 max-w-4xl mx-auto">
-          <NavButton icon={<FileText />} label="Nueva Nota" active={activeTab === 'nueva-nota'} onClick={() => { setActiveTab('nueva-nota'); setEditingNota(null); }} />
+      <nav className="fixed bottom-0 w-full bg-zinc-900 border-t border-zinc-800 pb-safe overflow-x-auto no-scrollbar z-20">
+        <div className="flex justify-between min-w-[700px] p-2 px-4 gap-1 max-w-4xl mx-auto">
+          <NavButton icon={<FileText />} label="Nota" active={activeTab === 'nueva-nota'} onClick={() => { setActiveTab('nueva-nota'); setEditingNota(null); }} />
           <NavButton icon={<History />} label="Historial" active={activeTab === 'historial'} onClick={() => setActiveTab('historial')} />
           <NavButton icon={<Wallet />} label="Cuentas" active={activeTab === 'cuentas'} onClick={() => setActiveTab('cuentas')} />
           <NavButton icon={<Users />} label="Clientes" active={activeTab === 'clientes'} onClick={() => setActiveTab('clientes')} />
           <NavButton icon={<Tag />} label="Catálogo" active={activeTab === 'catalogo'} onClick={() => setActiveTab('catalogo')} />
           <NavButton icon={<UserCheck />} label="Vendedores" active={activeTab === 'vendedores'} onClick={() => setActiveTab('vendedores')} />
+          <NavButton icon={<Settings />} label="Clave" active={activeTab === 'configuracion'} onClick={() => setActiveTab('configuracion')} />
+          <NavButton icon={<RotateCcw />} label="Reset" active={activeTab === 'reiniciar'} onClick={() => setActiveTab('reiniciar')} />
         </div>
       </nav>
 
@@ -185,9 +189,9 @@ export default function AgropecuariaApp() {
 
 function NavButton({ icon, label, active, onClick }) {
   return (
-    <button onClick={onClick} className={`flex flex-col items-center p-2 rounded-xl transition-all ${active ? 'text-rose-500 scale-110' : 'text-zinc-500 hover:text-zinc-300'}`}>
-      <div className="mb-1">{React.cloneElement(icon, { className: 'w-6 h-6' })}</div>
-      <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+    <button onClick={onClick} className={`flex flex-col items-center p-2 rounded-xl transition-all ${active ? 'text-rose-500 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}>
+      <div className="mb-1">{React.cloneElement(icon, { className: 'w-5 h-5' })}</div>
+      <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
     </button>
   );
 }
@@ -433,17 +437,17 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     }
   };
 
-  const compartirWhatsApp = (notaObj = receiptData) => {
+  const compartirWhatsApp = async (notaObj = receiptData) => {
     if (!notaObj) return;
-    // Descarga la imagen y abre WhatsApp de forma directa y limpia
-    descargarImagen('recibo-final');
+    await descargarImagen('recibo-final');
     window.open('https://api.whatsapp.com/send?phone=', '_blank');
-    showToast("Imagen descargada. Ya puedes adjuntarla en WhatsApp");
+    showToast("Imagen descargada automáticamente. Adjúntala en WhatsApp");
   };
 
   const reiniciar = () => {
     setIsTotalized(false);
     setReceiptData(null);
+    setItem([]);
     setItems([]);
     setClienteId('');
     setEditingNota(null);
@@ -622,7 +626,7 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
       }
 
       window.open(`https://api.whatsapp.com/send?phone=`, '_blank');
-      showToast("Imagen descargada. Ya puedes adjuntarla en WhatsApp");
+      showToast("Imagen descargada automáticamente. Adjúntala en WhatsApp");
       setNotaVisualizando(null);
     }, 150);
   };
@@ -739,7 +743,7 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
       const mensaje = `¡Buenos días! ☀️\n\nEstimado(a) *${nota.cliente?.nombre || 'Cliente'}*, te escribimos para saludarte y recordarte amablemente el vencimiento de tu factura pendiente.\n\nA continuación, los detalles de tu pedido:\n• *Nota de Entrega N°:* \`${nota.numero}\`\n• *Fecha:* _${nota.fecha}_\n• *Detalle:* \n${detalleItems}\n\n*TOTAL A PAGAR:* \`$${parseFloat(nota.total || 0).toFixed(2)} REF\`\n\nPuedes realizar tu pago por los siguientes medios:\n\n🏦 *PAGO MÓVIL - TRANSFERENCIA*\n- Banco: _Mercantil_\n- Teléfono: \`0424-656 5520\`\n- Cédula: \`22.362.833\`\n- Nro. Cuenta: \`01740111471114416694\`\n\n🟡 *BINANCE*\n- Correo: _DAGV94@GMAIL.COM_\n- Binance ID: \`1254404157\`\n- Etiqueta/Memo: \`DAGV-1994\`\n\nPor favor, compártenos el capture del pago por aquí una vez lo realices.\n\n¡Estamos atentos a tus nuevos pedidos! Que tengas un excelente día. 🐷`;
 
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`, '_blank');
-      showToast("Imagen de factura descargada y WhatsApp abierto con el recordatorio");
+      showToast("Imagen descargada automáticamente. Adjúntala en WhatsApp");
       setNotaVisualizando(null);
     }, 150);
   };
@@ -1111,6 +1115,155 @@ function VendedoresTab({ showToast, db, vendedores }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ConfiguracionTab({ showToast }) {
+  const [claveActual, setClaveActual] = useState('');
+  const [claveNueva, setClaveNueva] = useState('');
+  const [claveConfirmar, setClaveConfirmar] = useState('');
+
+  const cambiarClave = (e) => {
+    e.preventDefault();
+    const claveGuardada = localStorage.getItem('alabastro_master_key') || 'Alabastro';
+    
+    if (claveActual !== claveGuardada) {
+      return showToast("La clave actual es incorrecta");
+    }
+    if (!claveNueva || claveNueva.length < 4) {
+      return showToast("La nueva clave debe tener al menos 4 caracteres");
+    }
+    if (claveNueva !== claveConfirmar) {
+      return showToast("Las claves nuevas no coinciden");
+    }
+
+    localStorage.setItem('alabastro_master_key', claveNueva);
+    setClaveActual('');
+    setClaveNueva('');
+    setClaveConfirmar('');
+    showToast("¡Clave de seguridad actualizada con éxito!");
+  };
+
+  return (
+    <div className="space-y-6 pb-10">
+      <form onSubmit={cambiarClave} className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 space-y-4 shadow-xl max-w-md mx-auto">
+        <h2 className="text-xl font-black flex items-center gap-2"><KeyRound className="text-rose-500"/> Configurar Clave de Seguridad</h2>
+        <p className="text-xs text-zinc-400">Esta clave se utiliza para autorizar operaciones sensibles como el reinicio de fábrica del sistema.</p>
+        
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-400 uppercase">Clave Actual</label>
+          <input type="password" value={claveActual} onChange={e => setClaveActual(e.target.value)} placeholder="Por defecto: Alabastro" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" required />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-400 uppercase">Nueva Clave</label>
+          <input type="password" value={claveNueva} onChange={e => setClaveNueva(e.target.value)} placeholder="Mínimo 4 caracteres" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" required />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-zinc-400 uppercase">Confirmar Nueva Clave</label>
+          <input type="password" value={claveConfirmar} onChange={e => setClaveConfirmar(e.target.value)} placeholder="Repita la nueva clave" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" required />
+        </div>
+
+        <button type="submit" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg">Actualizar Clave</button>
+      </form>
+    </div>
+  );
+}
+
+function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores }) {
+  const [claveIngresada, setClaveIngresada] = useState('');
+  const [procesando, setProcesando] = useState(false);
+
+  const realizarRespaldoJSON = () => {
+    const datosRespaldo = {
+      fechaRespaldo: new Date().toISOString(),
+      notas,
+      clientes,
+      productos,
+      vendedores
+    };
+    const blob = new Blob([JSON.stringify(datosRespaldo, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Respaldo_Alabastro_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const limpiarColeccion = async (nombreColeccion) => {
+    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', nombreColeccion));
+    const batch = writeBatch(db);
+    querySnapshot.forEach((documento) => {
+      batch.delete(documento.ref);
+    });
+    await batch.commit();
+  };
+
+  const ejecutarReinicioFabrica = async (e) => {
+    e.preventDefault();
+    const claveMaestra = localStorage.getItem('alabastro_master_key') || 'Alabastro';
+
+    if (claveIngresada !== claveMaestra) {
+      return showToast("Clave de seguridad incorrecta");
+    }
+
+    if (!window.confirm("⚠️ ADVERTENCIA: Se eliminarán todos los datos actuales y el sistema volverá a cero. ¿Desea proceder?")) {
+      return;
+    }
+
+    setProcesando(true);
+    try {
+      // 1. Generar y descargar respaldo automáticamente
+      realizarRespaldoJSON();
+      showToast("Respaldo descargado con éxito. Vaciando base de datos...");
+
+      // 2. Borrar colecciones de Firebase
+      await limpiarColeccion('notas');
+      await limpiarColeccion('clientes');
+      await limpiarColeccion('catalogo');
+      await limpiarColeccion('vendedores');
+
+      // Reiniciar secuencia de notas
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'secuencia'), { valor: 0 });
+      } catch (err) {
+        console.error(err);
+      }
+
+      setClaveIngresada('');
+      showToast("¡Sistema restablecido a fábrica con éxito!");
+    } catch (error) {
+      console.error(error);
+      showToast("Error al procesar el reinicio de fábrica");
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 pb-10">
+      <form onSubmit={ejecutarReinicioFabrica} className="bg-zinc-900 p-6 rounded-2xl border border-red-900/50 space-y-4 shadow-xl max-w-md mx-auto">
+        <div className="flex items-center gap-3 text-red-500">
+          <AlertTriangle className="w-8 h-8 flex-shrink-0" />
+          <h2 className="text-xl font-black">Restaurar a Fábrica</h2>
+        </div>
+        <p className="text-xs text-zinc-300 leading-relaxed">
+          Esta herramienta borra todos los registros, notas, clientes y catálogos de la base de datos de manera definitiva. 
+          <span className="text-rose-400 font-bold block mt-1">Se generará y descargará un archivo de respaldo (.json) en tu dispositivo automáticamente antes de vaciar la información.</span>
+        </p>
+
+        <div className="space-y-1 pt-2">
+          <label className="text-xs font-bold text-zinc-400 uppercase">Ingrese Clave de Seguridad</label>
+          <input type="password" value={claveIngresada} onChange={e => setClaveIngresada(e.target.value)} placeholder="Clave maestra" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-red-500" required />
+        </div>
+
+        <button type="submit" disabled={procesando} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg disabled:opacity-50">
+          {procesando ? 'Procesando Respaldo y Limpieza...' : 'Respaldar y Reiniciar Sistema'}
+        </button>
+      </form>
     </div>
   );
 }
