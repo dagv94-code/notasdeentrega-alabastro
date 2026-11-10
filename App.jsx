@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Settings, RotateCcw, KeyRound, AlertTriangle, Calendar
+  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Settings, RotateCcw, KeyRound, AlertTriangle, Calendar, BarChart3, Filter
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -157,18 +157,20 @@ export default function AgropecuariaApp() {
         {activeTab === 'nueva-nota' && <NuevaNotaTab clientes={clientes} productos={productos} vendedores={vendedores} showToast={showToast} db={db} user={user} editingNota={editingNota} setEditingNota={setEditingNota} setActiveTab={setActiveTab} />}
         {activeTab === 'historial' && <HistorialTab notas={notas} showToast={showToast} db={db} handleEditNota={handleEditNota} />}
         {activeTab === 'cuentas' && <CuentasPorCobrarTab notas={notas} vendedores={vendedores} showToast={showToast} db={db} />}
+        {activeTab === 'reportes' && <ReportesTab notas={notas} clientes={clientes} productos={productos} vendedores={vendedores} />}
         {activeTab === 'clientes' && <ClientesTab showToast={showToast} db={db} user={user} clientes={clientes} />}
         {activeTab === 'catalogo' && <CatalogoTab showToast={showToast} db={db} user={user} productos={productos} />}
         {activeTab === 'vendedores' && <VendedoresTab showToast={showToast} db={db} user={user} vendedores={vendedores} />}
         {activeTab === 'configuracion' && <ConfiguracionTab showToast={showToast} />}
-        {activeTab === 'reiniciar' && <ReiniciarTab showToast={showToast} db={db} notas={notas} clientes={clientes} productos={productos} vendedores={vendedores} />}
+        {activeTab === 'reiniciar' && <ReiniciarTab showToast={showToast} db={db} notas={notas} />}
       </main>
 
       <nav className="fixed bottom-0 w-full bg-zinc-900 border-t border-zinc-800 pb-safe overflow-x-auto no-scrollbar z-20">
-        <div className="flex justify-between min-w-[700px] p-2 px-4 gap-1 max-w-4xl mx-auto">
+        <div className="flex justify-between min-w-[780px] p-2 px-3 gap-1 max-w-4xl mx-auto">
           <NavButton icon={<FileText />} label="Nota" active={activeTab === 'nueva-nota'} onClick={() => { setActiveTab('nueva-nota'); setEditingNota(null); }} />
           <NavButton icon={<History />} label="Historial" active={activeTab === 'historial'} onClick={() => setActiveTab('historial')} />
           <NavButton icon={<Wallet />} label="Cuentas" active={activeTab === 'cuentas'} onClick={() => setActiveTab('cuentas')} />
+          <NavButton icon={<BarChart3 />} label="Reportes" active={activeTab === 'reportes'} onClick={() => setActiveTab('reportes')} />
           <NavButton icon={<Users />} label="Clientes" active={activeTab === 'clientes'} onClick={() => setActiveTab('clientes')} />
           <NavButton icon={<Tag />} label="Catálogo" active={activeTab === 'catalogo'} onClick={() => setActiveTab('catalogo')} />
           <NavButton icon={<UserCheck />} label="Vendedores" active={activeTab === 'vendedores'} onClick={() => setActiveTab('vendedores')} />
@@ -720,9 +722,12 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
   const [busquedaCliente, setBusquedaCliente] = useState('');
   const [notaVisualizando, setNotaVisualizando] = useState(null);
 
+  const [modalPagoNota, setModalPagoNota] = useState(null);
+  const [metodoPagoSeleccionado, setMetodoPagoSeleccionado] = useState('Divisas en efectivo');
+
   const calcularMaduracion = (timestamp, termino) => {
     if (termino && termino.startsWith('Fija:')) {
-      const fechaStr = termino.split(':')[1]; // YYYY-MM-DD
+      const fechaStr = termino.split(':')[1];
       if (fechaStr) {
         const [y, m, d] = fechaStr.split('-');
         const fVenc = new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).getTime();
@@ -758,10 +763,22 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
     return { diasRestantes, categoria };
   };
 
-  const togglePago = async (nota) => {
+  const confirmarPago = async () => {
+    if (!modalPagoNota) return;
+    const nota = modalPagoNota;
+    const nuevoPagadoStatus = !nota.pagado;
+
+    const dNow = new Date();
+    const fechaPagoStr = `${dNow.getDate().toString().padStart(2, '0')}/${(dNow.getMonth() + 1).toString().padStart(2, '0')}/${dNow.getFullYear()}`;
+
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', nota.id), { pagado: !nota.pagado });
-      showToast(nota.pagado ? "Marcado como pendiente" : "Pago registrado con éxito");
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', nota.id), { 
+        pagado: nuevoPagadoStatus,
+        metodoPago: nuevoPagadoStatus ? metodoPagoSeleccionado : null,
+        fechaPago: nuevoPagadoStatus ? fechaPagoStr : null
+      });
+      showToast(nuevoPagadoStatus ? `Pago registrado (${metodoPagoSeleccionado})` : "Marcado como pendiente");
+      setModalPagoNota(null);
     } catch (e) {
       showToast("Error al actualizar pago");
     }
@@ -902,13 +919,15 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
                     </button>
                   </td>
                   <td className="p-4 text-center">
-                    <button onClick={() => togglePago(nota)} className="p-2 rounded-lg hover:bg-zinc-800 transition-colors inline-flex items-center gap-2">
-                      {nota.pagado ? (
-                        <span className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full"><CheckSquare className="w-5 h-5"/> Pagado</span>
-                      ) : (
-                        <span className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20"><Square className="w-5 h-5"/> Marcar Pago</span>
-                      )}
-                    </button>
+                    {nota.pagado ? (
+                      <button onClick={() => { setModalPagoNota(nota); }} className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full hover:bg-green-500/20">
+                        <CheckSquare className="w-5 h-5"/> Pagado ({nota.metodoPago || 'Efectivo'}) - {nota.fechaPago || ''}
+                      </button>
+                    ) : (
+                      <button onClick={() => { setModalPagoNota(nota); setMetodoPagoSeleccionado('Divisas en efectivo'); }} className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20">
+                        <Square className="w-5 h-5"/> Marcar Pago
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
@@ -920,11 +939,227 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
         </table>
       </div>
 
+      {modalPagoNota && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-black text-rose-500">Registrar Cobro / Pago</h3>
+            <p className="text-sm text-zinc-300">Nota #{modalPagoNota.numero} - <b>{modalPagoNota.cliente?.nombre}</b> (${parseFloat(modalPagoNota.total || 0).toFixed(2)} REF)</p>
+            
+            {modalPagoNota.pagado ? (
+              <div className="space-y-3">
+                <p className="text-xs text-yellow-400">Este documento ya se encuentra pagado. ¿Desea marcarlo nuevamente como pendiente?</p>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
+                  <button onClick={confirmarPago} className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold">Marcar Pendiente</button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Seleccione Método de Pago</label>
+                  <select value={metodoPagoSeleccionado} onChange={e => setMetodoPagoSeleccionado(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+                    <option value="Divisas en efectivo">Divisas en efectivo</option>
+                    <option value="Bolívares en efectivo">Bolívares en efectivo</option>
+                    <option value="Transferencia bancaria Mercantil">Transferencia bancaria Mercantil</option>
+                    <option value="Binance">Binance</option>
+                  </select>
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
+                  <button onClick={confirmarPago} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Confirmar Pago</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {notaVisualizando && (
         <div style={{ position: 'fixed', left: '-9999px', top: '-9999px', zIndex: -1000 }}>
           <ReciboView receiptData={notaVisualizando} />
         </div>
       )}
+    </div>
+  );
+}
+
+function ReportesTab({ notas, clientes, productos, vendedores }) {
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
+  const [clienteFiltro, setClienteFiltro] = useState('');
+  const [productoFiltro, setProductoFiltro] = useState('');
+  const [vendedorFiltro, setVendedorFiltro] = useState('');
+
+  // Filtrado de notas
+  const notasReporte = notas.filter(nota => {
+    if (nota.estado === 'anulado') return false;
+
+    // Filtro por fecha timestamp (nota.timestamp)
+    if (fechaInicio) {
+      const startMs = new Date(fechaInicio + 'T00:00:00').getTime();
+      if (nota.timestamp < startMs) return false;
+    }
+    if (fechaFin) {
+      const endMs = new Date(fechaFin + 'T23:59:59').getTime();
+      if (nota.timestamp > endMs) return false;
+    }
+
+    if (clienteFiltro && nota.cliente?.id !== clienteFiltro) return false;
+    if (vendedorFiltro && nota.vendedor?.id !== vendedorFiltro) return false;
+
+    if (productoFiltro) {
+      const tieneProd = (nota.items || []).some(i => i.productoId === productoFiltro || i.descripcion === productoFiltro);
+      if (!tieneProd) return false;
+    }
+
+    return true;
+  });
+
+  // Métricas
+  const totalVentas = notasReporte.reduce((acc, n) => acc + parseFloat(n.total || 0), 0);
+  const totalNotas = notasReporte.length;
+
+  const notasPagadas = notasReporte.filter(n => n.pagado);
+  const totalCobrado = notasPagadas.reduce((acc, n) => acc + parseFloat(n.total || 0), 0);
+
+  const notasPendientes = notasReporte.filter(n => !n.pagado);
+  const totalPendiente = notasPendientes.reduce((acc, n) => acc + parseFloat(n.total || 0), 0);
+
+  // Desglose cobrado por modalidad
+  const cobradoPorModalidad = {
+    'Divisas en efectivo': 0,
+    'Bolívares en efectivo': 0,
+    'Transferencia bancaria Mercantil': 0,
+    'Binance': 0
+  };
+
+  notasPagadas.forEach(n => {
+    const metodo = n.metodoPago || 'Divisas en efectivo';
+    if (cobradoPorModalidad[metodo] !== undefined) {
+      cobradoPorModalidad[metodo] += parseFloat(n.total || 0);
+    } else {
+      cobradoPorModalidad['Divisas en efectivo'] += parseFloat(n.total || 0);
+    }
+  });
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
+        <h2 className="text-xl font-black flex items-center gap-2 border-b border-zinc-800 pb-3">
+          <BarChart3 className="text-rose-500" /> Reportes de Ventas y Cobranza
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Desde (Fecha)</label>
+            <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-white text-sm outline-none focus:border-rose-500" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Hasta (Fecha)</label>
+            <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-white text-sm outline-none focus:border-rose-500" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Cliente</label>
+            <select value={clienteFiltro} onChange={e => setClienteFiltro(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-white text-sm outline-none focus:border-rose-500">
+              <option value="">Todos los clientes</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Corte / Producto</label>
+            <select value={productoFiltro} onChange={e => setProductoFiltro(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-white text-sm outline-none focus:border-rose-500">
+              <option value="">Todos los productos</option>
+              {productos.map(p => <option key={p.id} value={p.descripcion}>{p.descripcion}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-400 uppercase">Vendedor</label>
+            <select value={vendedorFiltro} onChange={e => setVendedorFiltro(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-white text-sm outline-none focus:border-rose-500">
+              <option value="">Todos los vendedores</option>
+              {vendedores.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button onClick={() => { setFechaInicio(''); setFechaFin(''); setClienteFiltro(''); setProductoFiltro(''); setVendedorFiltro(''); }} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold p-2.5 rounded-xl transition-all text-sm">
+              Limpiar Filtros
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tarjetas resumen */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-lg space-y-1">
+          <span className="text-xs font-bold text-zinc-400 uppercase">Total Ventas (Facturado)</span>
+          <div className="text-2xl font-black text-white">${totalVentas.toFixed(2)} REF</div>
+          <div className="text-xs text-zinc-500">{totalNotas} notas emitidas en el periodo</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-lg space-y-1">
+          <span className="text-xs font-bold text-green-400 uppercase">Ingresos Cobrados</span>
+          <div className="text-2xl font-black text-green-400">${totalCobrado.toFixed(2)} REF</div>
+          <div className="text-xs text-zinc-500">{notasPagadas.length} notas pagadas</div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl shadow-lg space-y-1">
+          <span className="text-xs font-bold text-yellow-400 uppercase">Saldos Pendientes (Por Cobrar)</span>
+          <div className="text-2xl font-black text-yellow-400">${totalPendiente.toFixed(2)} REF</div>
+          <div className="text-xs text-zinc-500">{notasPendientes.length} notas por cobrar</div>
+        </div>
+      </div>
+
+      {/* Desglose por modalidad de cobro */}
+      <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-3">
+        <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Ingresos Percibidos por Modalidad de Pago</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          {Object.entries(cobradoPorModalidad).map(([mod, monto]) => (
+            <div key={mod} className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+              <div className="text-xs text-zinc-400 font-medium">{mod}</div>
+              <div className="text-lg font-black text-white mt-1">${monto.toFixed(2)} REF</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Detalle de notas en el reporte */}
+      <div className="bg-zinc-900 rounded-xl border border-zinc-800 shadow-lg overflow-hidden">
+        <div className="p-4 border-b border-zinc-800 font-bold text-sm text-zinc-300">
+          Notas Incluidas en el Reporte ({notasReporte.length})
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-zinc-950 text-zinc-400">
+              <tr>
+                <th className="p-3">Nota</th>
+                <th className="p-3">Fecha</th>
+                <th className="p-3">Cliente</th>
+                <th className="p-3">Vendedor</th>
+                <th className="p-3">Estatus</th>
+                <th className="p-3 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800/50">
+              {notasReporte.map(n => (
+                <tr key={n.id} className="hover:bg-zinc-800/30">
+                  <td className="p-3 font-mono font-bold text-rose-500">#{n.numero}</td>
+                  <td className="p-3 text-zinc-300">{n.fecha}</td>
+                  <td className="p-3 font-bold text-white">{n.cliente?.nombre}</td>
+                  <td className="p-3 text-zinc-400">{n.vendedor?.nombre}</td>
+                  <td className="p-3">
+                    {n.pagado ? (
+                      <span className="text-green-400 text-xs font-bold bg-green-500/10 px-2 py-0.5 rounded">Pagado ({n.metodoPago || 'Efectivo'})</span>
+                    ) : (
+                      <span className="text-yellow-400 text-xs font-bold bg-yellow-500/10 px-2 py-0.5 rounded">Pendiente</span>
+                    )}
+                  </td>
+                  <td className="p-3 text-right font-black text-white">${parseFloat(n.total || 0).toFixed(2)} REF</td>
+                </tr>
+              ))}
+              {notasReporte.length === 0 && (
+                <tr><td colSpan="6" className="p-6 text-center text-zinc-500">No hay transacciones en este rango o filtros.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1023,6 +1258,8 @@ function CatalogoTab({ showToast, db, productos }) {
   const [editCodigo, setEditCodigo] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editPrecio, setEditPrecio] = useState('');
+  const [modalClaveProd, setModalClaveProd] = useState(false);
+  const [claveIngresadaProd, setClaveIngresadaProd] = useState('');
 
   const addProducto = async (e) => {
     e.preventDefault();
@@ -1043,6 +1280,28 @@ function CatalogoTab({ showToast, db, productos }) {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'catalogo', id));
       showToast("Producto eliminado");
     } catch(e) { showToast("Error al eliminar"); }
+  };
+
+  const confirmarEdicionPrecio = async (e) => {
+    e.preventDefault();
+    const claveMaestra = localStorage.getItem('alabastro_master_key') || 'Alabastro';
+    if (claveIngresadaProd !== claveMaestra) {
+      return showToast("Clave de seguridad incorrecta");
+    }
+
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'catalogo', prodEditando), {
+        codigo: editCodigo.padStart(4, '0'),
+        descripcion: editDesc.trim(),
+        precio: parseFloat(editPrecio)
+      });
+      setProdEditando(null);
+      setModalClaveProd(false);
+      setClaveIngresadaProd('');
+      showToast("Producto y precio actualizados con éxito");
+    } catch (err) {
+      showToast("Error al actualizar producto");
+    }
   };
 
   return (
@@ -1076,10 +1335,10 @@ function CatalogoTab({ showToast, db, productos }) {
         ))}
       </div>
 
-      {prodEditando && (
+      {prodEditando && !modalClaveProd && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="text-xl font-black text-rose-500">Editar Producto</h3>
+            <h3 className="text-xl font-black text-rose-500">Editar Producto / Precio</h3>
             <div className="flex gap-3">
               <input value={editCodigo} onChange={e => setEditCodigo(e.target.value)} maxLength={4} className="w-1/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none font-mono" />
               <input value={editPrecio} onChange={e => setEditPrecio(e.target.value)} type="number" step="0.01" className="w-2/3 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
@@ -1087,12 +1346,23 @@ function CatalogoTab({ showToast, db, productos }) {
             <input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none" />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setProdEditando(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
-              <button onClick={async () => {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'catalogo', prodEditando), { codigo: editCodigo.padStart(4, '0'), descripcion: editDesc.trim(), precio: parseFloat(editPrecio) });
-                setProdEditando(null); showToast("Producto actualizado");
-              }} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
+              <button onClick={() => setModalClaveProd(true)} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold">Continuar (Requerir Clave)</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {modalClaveProd && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+          <form onSubmit={confirmarEdicionPrecio} className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-black text-rose-500">Autorización Requerida</h3>
+            <p className="text-xs text-zinc-400">Ingrese su clave de seguridad para autorizar la modificación del precio o producto.</p>
+            <input type="password" value={claveIngresadaProd} onChange={e => setClaveIngresadaProd(e.target.value)} placeholder="Clave de seguridad" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500" required autoFocus />
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => { setModalClaveProd(false); setClaveIngresadaProd(''); }} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Atrás</button>
+              <button type="submit" className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold">Confirmar Actualización</button>
+            </div>
+          </form>
         </div>
       )}
     </div>
@@ -1196,7 +1466,7 @@ function ConfiguracionTab({ showToast }) {
     <div className="space-y-6 pb-10">
       <form onSubmit={cambiarClave} className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 space-y-4 shadow-xl max-w-md mx-auto">
         <h2 className="text-xl font-black flex items-center gap-2"><KeyRound className="text-rose-500"/> Configurar Clave de Seguridad</h2>
-        <p className="text-xs text-zinc-400">Esta clave se utiliza para autorizar operaciones sensibles como el reinicio de fábrica del sistema.</p>
+        <p className="text-xs text-zinc-400">Esta clave se utiliza para autorizar operaciones sensibles como la actualización de precios y el reinicio de notas del sistema.</p>
         
         <div className="space-y-1">
           <label className="text-xs font-bold text-zinc-400 uppercase">Clave Actual</label>
@@ -1219,23 +1489,20 @@ function ConfiguracionTab({ showToast }) {
   );
 }
 
-function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores }) {
+function ReiniciarTab({ showToast, db, notas }) {
   const [claveIngresada, setClaveIngresada] = useState('');
   const [procesando, setProcesando] = useState(false);
 
   const realizarRespaldoJSON = () => {
     const datosRespaldo = {
       fechaRespaldo: new Date().toISOString(),
-      notas,
-      clientes,
-      productos,
-      vendedores
+      notas
     };
     const blob = new Blob([JSON.stringify(datosRespaldo, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Respaldo_Alabastro_${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `Respaldo_Historial_Alabastro_${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -1257,20 +1524,17 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
       return showToast("Clave de seguridad incorrecta");
     }
 
-    if (!window.confirm("⚠️ ADVERTENCIA: Se eliminará todo el historial de notas y cuentas por cobrar. Los clientes, productos y vendedores se conservarán intactos. ¿Desea proceder?")) {
+    if (!window.confirm("⚠️ ADVERTENCIA: Se eliminará todo el historial de notas y cuentas por cobrar. Los clientes, productos (catálogo) y vendedores se conservarán intactos. ¿Desea proceder?")) {
       return;
     }
 
     setProcesando(true);
     try {
-      // 1. Descargar respaldo completo antes de limpiar
       realizarRespaldoJSON();
-      showToast("Respaldo descargado con éxito. Vaciando historial de notas...");
+      showToast("Respaldo del historial descargado con éxito. Vaciando notas...");
 
-      // 2. Borrar ÚNICAMENTE la colección de notas
       await limpiarColeccion('notas');
 
-      // 3. Reiniciar secuencia de notas a cero
       try {
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'secuencia'), { valor: 0 });
       } catch (err) {
@@ -1278,7 +1542,7 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
       }
 
       setClaveIngresada('');
-      showToast("¡Historial de notas restablecido con éxito! Catálogos y clientes conservados.");
+      showToast("¡Historial de notas restablecido con éxito! Catálogos, clientes y vendedores intactos.");
     } catch (error) {
       console.error(error);
       showToast("Error al procesar el reinicio del historial");
@@ -1296,7 +1560,7 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
         </div>
         <p className="text-xs text-zinc-300 leading-relaxed">
           Esta herramienta borra el historial de notas de entrega y el estado de cuentas por cobrar de manera definitiva. 
-          <span className="text-rose-400 font-bold block mt-1">Se generará y descargará un archivo de respaldo (.json) completo antes de vaciar las notas. El catálogo de productos, los clientes y los vendedores se conservarán intactos.</span>
+          <span className="text-rose-400 font-bold block mt-1">Se generará y descargará un respaldo en .json de las notas antes de vaciarlas. El Catálogo de Productos, los Clientes y los Vendedores NO se eliminan.</span>
         </p>
 
         <div className="space-y-1 pt-2">
@@ -1305,7 +1569,7 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
         </div>
 
         <button type="submit" disabled={procesando} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg disabled:opacity-50">
-          {procesando ? 'Procesando Respaldo y Limpieza...' : 'Respaldar y Reiniciar Historial'}
+          {procesando ? 'Procesando Respaldo y Limpieza...' : 'Respaldar e Iniciar Nuevo Periodo'}
         </button>
       </form>
     </div>
