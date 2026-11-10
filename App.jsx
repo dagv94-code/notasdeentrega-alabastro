@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc
 import { 
   Users, UserCheck, FileText, Download, Plus, 
   Trash2, ChevronRight, CheckCircle2, MapPin, Tag, ArrowLeft,
-  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Settings, RotateCcw, KeyRound, AlertTriangle
+  History, Wallet, Edit, Share2, Search, Square, CheckSquare, Ban, Settings, RotateCcw, KeyRound, AlertTriangle, Calendar
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -197,12 +197,20 @@ function NavButton({ icon, label, active, onClick }) {
 }
 
 function ReciboView({ receiptData }) {
-  const calcularFechaVencimiento = (timestamp, termino) => {
+  const calcularFechaVencimientoTexto = (timestamp, termino) => {
+    if (termino === 'Contado') return 'Inmediato (Contado)';
+    if (termino.startsWith('Fija:')) {
+      const parts = termino.split(':');
+      if (parts[1]) {
+        const [y, m, d] = parts[1].split('-');
+        return `${d}/${m}/${y}`;
+      }
+    }
     const dias = termino === '7 días' ? 7 : termino === '15 días' ? 15 : termino === '30 días' ? 30 : 0;
     if (dias === 0) return 'Inmediato (Contado)';
-    const d = new Date(timestamp);
-    d.setDate(d.getDate() + dias);
-    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+    const dt = new Date(timestamp);
+    dt.setDate(dt.getDate() + dias);
+    return `${dt.getDate().toString().padStart(2, '0')}/${(dt.getMonth() + 1).toString().padStart(2, '0')}/${dt.getFullYear()}`;
   };
 
   return (
@@ -232,8 +240,8 @@ function ReciboView({ receiptData }) {
             <p className="font-bold text-lg">{receiptData.vendedor?.nombre}</p>
           </div>
           <div className="mt-2 pt-2 border-t border-zinc-200">
-            <p className="text-xs text-zinc-600"><b>Condición:</b> {receiptData.terminoPago}</p>
-            <p className="text-xs text-rose-600 font-bold mt-1"><b>Fecha de Pago:</b> {calcularFechaVencimiento(receiptData.timestamp, receiptData.terminoPago)}</p>
+            <p className="text-xs text-zinc-600"><b>Condición:</b> {receiptData.terminoPago.startsWith('Fija:') ? 'Fecha Específica' : receiptData.terminoPago}</p>
+            <p className="text-xs text-rose-600 font-bold mt-1"><b>Fecha de Pago:</b> {calcularFechaVencimientoTexto(receiptData.timestamp, receiptData.terminoPago)}</p>
           </div>
         </div>
       </div>
@@ -302,6 +310,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   const [clienteId, setClienteId] = useState('');
   const [vendedorId, setVendedorId] = useState('');
   const [terminoPago, setTerminoPago] = useState('Contado');
+  const [fechaEspecifica, setFechaEspecifica] = useState('');
   const [items, setItems] = useState([]);
   const [currProductoId, setCurrProductoId] = useState('');
   const [currPeso, setCurrPeso] = useState('');
@@ -313,7 +322,13 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
     if (editingNota) {
       setClienteId(editingNota.cliente?.id || '');
       setVendedorId(editingNota.vendedor?.id || '');
-      setTerminoPago(editingNota.terminoPago || 'Contado');
+      if (editingNota.terminoPago && editingNota.terminoPago.startsWith('Fija:')) {
+        setTerminoPago('Fija');
+        setFechaEspecifica(editingNota.terminoPago.split(':')[1] || '');
+      } else {
+        setTerminoPago(editingNota.terminoPago || 'Contado');
+        setFechaEspecifica('');
+      }
       setItems(editingNota.items || []);
       setIsTotalized(false);
       setReceiptData(null);
@@ -345,6 +360,12 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   const totalizar = async () => {
     if (!clienteId || !vendedorId || items.length === 0) {
       return showToast("Faltan datos o productos para totalizar");
+    }
+
+    let condicionFinal = terminoPago;
+    if (terminoPago === 'Fija') {
+      if (!fechaEspecifica) return showToast("Por favor seleccione la fecha de pago específica");
+      condicionFinal = `Fija:${fechaEspecifica}`;
     }
 
     setGenerating(true);
@@ -384,7 +405,7 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
         timestamp: timestamp,
         cliente,
         vendedor,
-        terminoPago,
+        terminoPago: condicionFinal,
         items,
         total,
         pagado: editingNota ? editingNota.pagado : false,
@@ -447,7 +468,6 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
   const reiniciar = () => {
     setIsTotalized(false);
     setReceiptData(null);
-    setItem([]);
     setItems([]);
     setClienteId('');
     setEditingNota(null);
@@ -499,15 +519,25 @@ function NuevaNotaTab({ clientes, productos, vendedores, showToast, db, user, ed
             </select>
           </div>
 
-          <div className="space-y-1 md:col-span-2">
+          <div className="space-y-2 md:col-span-2">
             <label className="text-xs font-bold text-zinc-400 uppercase">Condición de Pago</label>
             <div className="flex gap-2 flex-wrap">
-              {['Contado', '7 días', '15 días', '30 días'].map(term => (
+              {['Contado', '7 días', '15 días', '30 días', 'Fija'].map(term => (
                 <button key={term} onClick={() => setTerminoPago(term)} className={`px-4 py-2 rounded-lg text-sm font-bold flex-1 ${terminoPago === term ? 'bg-rose-600 text-white' : 'bg-zinc-950 border border-zinc-800 text-zinc-400'}`}>
-                  {term}
+                  {term === 'Fija' ? '📅 Fecha Específica' : term}
                 </button>
               ))}
             </div>
+
+            {terminoPago === 'Fija' && (
+              <div className="mt-3 bg-zinc-950 p-3 rounded-xl border border-rose-500/40 flex items-center gap-3">
+                <Calendar className="w-5 h-5 text-rose-500 flex-shrink-0" />
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold text-zinc-400 uppercase">Seleccione Fecha Exacta de Pago</label>
+                  <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white text-sm outline-none mt-1 focus:border-rose-500" />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -640,6 +670,7 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
       <div className="grid gap-4">
         {notas.map(nota => {
           const isAnulado = nota.estado === 'anulado';
+          const condTexto = nota.terminoPago?.startsWith('Fija:') ? `Fecha: ${nota.terminoPago.split(':')[1]}` : nota.terminoPago;
           return (
             <div key={nota.id} className={`bg-zinc-900 border ${isAnulado ? 'border-red-900/50 opacity-75' : 'border-zinc-800'} rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
               <div>
@@ -649,7 +680,7 @@ function HistorialTab({ notas, showToast, db, handleEditNota }) {
                   {isAnulado && <span className="bg-red-500/20 text-red-400 text-xs font-bold px-2 py-0.5 rounded">DOCUMENTO ANULADO</span>}
                 </div>
                 <h3 className={`font-bold text-lg mt-1 ${isAnulado ? 'line-through text-zinc-500' : 'text-white'}`}>{nota.cliente?.nombre}</h3>
-                <p className="text-xs text-zinc-400">Vendedor: {nota.vendedor?.nombre} • {nota.terminoPago}</p>
+                <p className="text-xs text-zinc-400">Vendedor: {nota.vendedor?.nombre} • {condTexto}</p>
               </div>
               <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
                 <span className={`text-xl font-black ${isAnulado ? 'line-through text-zinc-600' : 'text-white'}`}>${parseFloat(nota.total || 0).toFixed(2)}</span>
@@ -690,16 +721,31 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
   const [notaVisualizando, setNotaVisualizando] = useState(null);
 
   const calcularMaduracion = (timestamp, termino) => {
-    const totalDiasPlazo = termino === '7 días' ? 7 : termino === '15 días' ? 15 : termino === '30 días' ? 30 : 0;
-    if (totalDiasPlazo === 0) return { diasRestantes: 0, categoria: 'Vigente' };
+    if (termino && termino.startsWith('Fija:')) {
+      const fechaStr = termino.split(':')[1]; // YYYY-MM-DD
+      if (fechaStr) {
+        const [y, m, d] = fechaStr.split('-');
+        const fVenc = new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).getTime();
+        const ahora = Date.now();
+        const diasRestantes = Math.ceil((fVenc - ahora) / (1000 * 60 * 60 * 24));
+        
+        let categoria = 'Vigente';
+        if (diasRestantes <= 0) categoria = 'Vencido';
+        else if (diasRestantes <= 3) categoria = 'Por Vencer';
+        return { diasRestantes, categoria };
+      }
+    }
+
+    const diasPlazo = termino === '7 días' ? 7 : termino === '15 días' ? 15 : termino === '30 días' ? 30 : 0;
+    if (diasPlazo === 0) return { diasRestantes: 0, categoria: 'Vigente' };
 
     const ahora = Date.now();
     const diferenciaMs = ahora - timestamp;
     const diasTranscurridos = Math.floor(diferenciaMs / (1000 * 60 * 60 * 24));
-    const diasRestantes = totalDiasPlazo - diasTranscurridos;
+    const diasRestantes = diasPlazo - diasTranscurridos;
 
     let categoria = 'Vigente';
-    const umbralUltimoTercio = Math.ceil(totalDiasPlazo / 3);
+    const umbralUltimoTercio = Math.ceil(diasPlazo / 3);
 
     if (diasRestantes <= 0) {
       categoria = 'Vencido';
@@ -827,6 +873,7 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
             {notasFiltradas.map(nota => {
               const { diasRestantes, categoria } = calcularMaduracion(nota.timestamp, nota.terminoPago);
               const colorCategoria = categoria === 'Vigente' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : categoria === 'Por Vencer' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30';
+              const condLabel = nota.terminoPago?.startsWith('Fija:') ? `Fecha: ${nota.terminoPago.split(':')[1]}` : nota.terminoPago;
               
               return (
                 <tr key={nota.id} className="hover:bg-zinc-800/30">
@@ -835,7 +882,7 @@ function CuentasPorCobrarTab({ notas, vendedores, showToast, db }) {
                     <div className="font-bold text-white">{nota.cliente?.nombre}</div>
                     <div className="text-xs text-zinc-500">{nota.vendedor?.nombre} • {nota.fecha}</div>
                   </td>
-                  <td className="p-4 text-zinc-300">{nota.terminoPago}</td>
+                  <td className="p-4 text-zinc-300">{condLabel}</td>
                   <td className="p-4 font-mono font-bold">
                     {nota.terminoPago === 'Contado' ? 'Inmediato' : (
                       <span className={diasRestantes <= 0 ? 'text-red-500 font-black' : diasRestantes <= 5 ? 'text-yellow-400' : 'text-blue-400'}>
@@ -1210,23 +1257,20 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
       return showToast("Clave de seguridad incorrecta");
     }
 
-    if (!window.confirm("⚠️ ADVERTENCIA: Se eliminarán todos los datos actuales y el sistema volverá a cero. ¿Desea proceder?")) {
+    if (!window.confirm("⚠️ ADVERTENCIA: Se eliminará todo el historial de notas y cuentas por cobrar. Los clientes, productos y vendedores se conservarán intactos. ¿Desea proceder?")) {
       return;
     }
 
     setProcesando(true);
     try {
-      // 1. Generar y descargar respaldo automáticamente
+      // 1. Descargar respaldo completo antes de limpiar
       realizarRespaldoJSON();
-      showToast("Respaldo descargado con éxito. Vaciando base de datos...");
+      showToast("Respaldo descargado con éxito. Vaciando historial de notas...");
 
-      // 2. Borrar colecciones de Firebase
+      // 2. Borrar ÚNICAMENTE la colección de notas
       await limpiarColeccion('notas');
-      await limpiarColeccion('clientes');
-      await limpiarColeccion('catalogo');
-      await limpiarColeccion('vendedores');
 
-      // Reiniciar secuencia de notas
+      // 3. Reiniciar secuencia de notas a cero
       try {
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'secuencia'), { valor: 0 });
       } catch (err) {
@@ -1234,10 +1278,10 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
       }
 
       setClaveIngresada('');
-      showToast("¡Sistema restablecido a fábrica con éxito!");
+      showToast("¡Historial de notas restablecido con éxito! Catálogos y clientes conservados.");
     } catch (error) {
       console.error(error);
-      showToast("Error al procesar el reinicio de fábrica");
+      showToast("Error al procesar el reinicio del historial");
     } finally {
       setProcesando(false);
     }
@@ -1248,11 +1292,11 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
       <form onSubmit={ejecutarReinicioFabrica} className="bg-zinc-900 p-6 rounded-2xl border border-red-900/50 space-y-4 shadow-xl max-w-md mx-auto">
         <div className="flex items-center gap-3 text-red-500">
           <AlertTriangle className="w-8 h-8 flex-shrink-0" />
-          <h2 className="text-xl font-black">Restaurar a Fábrica</h2>
+          <h2 className="text-xl font-black">Reiniciar Historial de Notas</h2>
         </div>
         <p className="text-xs text-zinc-300 leading-relaxed">
-          Esta herramienta borra todos los registros, notas, clientes y catálogos de la base de datos de manera definitiva. 
-          <span className="text-rose-400 font-bold block mt-1">Se generará y descargará un archivo de respaldo (.json) en tu dispositivo automáticamente antes de vaciar la información.</span>
+          Esta herramienta borra el historial de notas de entrega y el estado de cuentas por cobrar de manera definitiva. 
+          <span className="text-rose-400 font-bold block mt-1">Se generará y descargará un archivo de respaldo (.json) completo antes de vaciar las notas. El catálogo de productos, los clientes y los vendedores se conservarán intactos.</span>
         </p>
 
         <div className="space-y-1 pt-2">
@@ -1261,7 +1305,7 @@ function ReiniciarTab({ showToast, db, notas, clientes, productos, vendedores })
         </div>
 
         <button type="submit" disabled={procesando} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg disabled:opacity-50">
-          {procesando ? 'Procesando Respaldo y Limpieza...' : 'Respaldar y Reiniciar Sistema'}
+          {procesando ? 'Procesando Respaldo y Limpieza...' : 'Respaldar y Reiniciar Historial'}
         </button>
       </form>
     </div>
