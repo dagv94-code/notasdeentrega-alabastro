@@ -326,7 +326,7 @@ function ReciboView({ receiptData }) {
   );
 }
 
-// Recibo Específico para Comprobantes de Abono / Pago
+// Recibo Específico para Comprobantes de Abono / Pago con Referencia y Tasa
 function ComprobantePagoView({ pagoData }) {
   return (
     <div id={`recibo-pago-${pagoData.id || 'final'}`} className="bg-white text-black p-8 w-[600px] mx-auto shadow-2xl relative" style={{ fontFamily: "Arial, sans-serif" }}>
@@ -345,13 +345,15 @@ function ComprobantePagoView({ pagoData }) {
         <div><b>Cliente:</b> {pagoData.clienteNombre}</div>
         <div><b>Tipo de Operación:</b> <span className="text-rose-600 font-bold">{pagoData.tipoOperacion}</span></div>
         <div><b>Método / Desglose:</b> {pagoData.metodoPago}</div>
+        {pagoData.referencia && <div><b>Nro. Referencia:</b> <span className="font-mono font-bold">{pagoData.referencia}</span></div>}
+        {pagoData.montoBsRecibido > 0 && <div><b>Monto Recibido en Bs:</b> <span className="font-mono">{pagoData.montoBsRecibido.toFixed(2)} Bs</span></div>}
         {pagoData.tasaImplicita && (
           <div><b>Tasa Implícita Aplicada:</b> <span className="font-mono text-emerald-700 font-bold">{pagoData.tasaImplicita} Bs/$</span></div>
         )}
       </div>
 
       <div className="bg-emerald-50 border-2 border-emerald-600 p-4 rounded-xl text-right mb-6 space-y-1">
-        <div className="text-sm text-emerald-900"><b>MONTO RECIBIDO / ABONADO:</b> ${pagoData.montoAbonado.toFixed(2)} REF</div>
+        <div className="text-sm text-emerald-900"><b>MONTO RECIBO / ABONADO:</b> ${pagoData.montoAbonado.toFixed(2)} REF</div>
         <div className="text-sm text-zinc-700"><b>TOTAL FACTURA:</b> ${pagoData.totalFactura.toFixed(2)} REF</div>
         <div className={`text-base font-black ${pagoData.saldoRestante > 0 ? 'text-red-600' : 'text-green-700'}`}>
           <b>SALDO PENDIENTE:</b> ${pagoData.saldoRestante.toFixed(2)} REF
@@ -783,15 +785,18 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
   const [notaVisualizando, setNotaVisualizando] = useState(null);
 
   const [modalPagoNota, setModalPagoNota] = useState(null);
-  const [tipoPago, setTipoPago] = useState('completo'); // 'completo' o 'abono'
+  const [tipoCobro, setTipoCobro] = useState('completo'); // 'completo' o 'parcial'
+  const [montoAbono, setMontoAbono] = useState('');
+  
   const [tipoPagoMixto, setTipoPagoMixto] = useState(false);
   const [montoDivisas, setMontoDivisas] = useState('');
   const [montoBs, setMontoBs] = useState('');
   const [equivalenteBsEnRef, setEquivalenteBsEnRef] = useState('');
+  const [referenciaPago, setReferenciaPago] = useState('');
   const [metodoSimple, setMetodoSimple] = useState('Divisas en efectivo');
-  const [montoAbonoParcial, setMontoAbonoParcial] = useState('');
 
   const [clienteSeleccionadoCobro, setClienteSeleccionadoCobro] = useState('');
+  const [facturasSeleccionadasCobro, setFacturasSeleccionadasCobro] = useState([]); // para selección múltiple
   const [comprobantePagoVisualizando, setComprobantePagoVisualizando] = useState(null);
 
   const calcularMaduracion = (timestamp, termino) => {
@@ -832,46 +837,25 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
     return { diasRestantes, categoria };
   };
 
-  const confirmarCobro = async () => {
-    if (!modalPagoNota) return;
-    const nota = modalPagoNota;
+  const procesarCobroIndividual = async (nota, montoAbonarParcial, esGlobalMultiple = false) => {
     const totalNota = parseFloat(nota.total || 0);
     const yaPagado = parseFloat(nota.montoPagado || 0);
     const saldoPendiente = Math.max(0, totalNota - yaPagado);
 
-    let abonoTotal = 0;
-    let descripcionesMetodo = [];
+    let abonoEsteDoc = esGlobalMultiple ? Math.min(saldoPendiente, montoAbonarParcial) : (tipoCobro === 'completo' ? saldoPendiente : parseFloat(montoAbono) || 0);
+    if (abonoEsteDoc <= 0) return 0;
 
-    if (tipoPago === 'completo') {
-      if (tipoPagoMixto) {
-        const divNum = parseFloat(montoDivisas) || 0;
-        const refBsNum = parseFloat(equivalenteBsEnRef) || 0;
-        abonoTotal = divNum + refBsNum;
-        if (abonoTotal <= 0) return showToast("Ingrese montos válidos");
-        if (divNum > 0) descripcionesMetodo.push(`Divisas ($${divNum.toFixed(2)})`);
-        if (refBsNum > 0) descripcionesMetodo.push(`Bolívares ($${refBsNum.toFixed(2)} ref / ${montoBs} Bs)`);
-      } else {
-        abonoTotal = saldoPendiente;
-        descripcionesMetodo.push(metodoSimple);
-      }
+    let descripcionesMetodo = [];
+    if (tipoPagoMixto) {
+      const divNum = parseFloat(montoDivisas) || 0;
+      const refBsNum = parseFloat(equivalenteBsEnRef) || 0;
+      if (divNum > 0) descripcionesMetodo.push(`Divisas ($${divNum.toFixed(2)})`);
+      if (refBsNum > 0) descripcionesMetodo.push(`Bolívares ($${refBsNum.toFixed(2)} ref / ${montoBs} Bs)`);
     } else {
-      // Abono Parcial
-      const parcialNum = parseFloat(montoAbonoParcial) || 0;
-      if (parcialNum <= 0 || parcialNum > saldoPendiente) {
-        return showToast("Monto de abono inválido o mayor al pendiente");
-      }
-      abonoTotal = parcialNum;
-      if (tipoPagoMixto) {
-        const divNum = parseFloat(montoDivisas) || 0;
-        const refBsNum = parseFloat(equivalenteBsEnRef) || 0;
-        if (divNum > 0) descripcionesMetodo.push(`Divisas ($${divNum.toFixed(2)})`);
-        if (refBsNum > 0) descripcionesMetodo.push(`Bolívares ($${refBsNum.toFixed(2)} ref / ${montoBs} Bs)`);
-      } else {
-        descripcionesMetodo.push(metodoSimple);
-      }
+      descripcionesMetodo.push(metodoSimple);
     }
 
-    const nuevoMontoPagado = yaPagado + abonoTotal;
+    const nuevoMontoPagado = yaPagado + abonoEsteDoc;
     const estaCompletamentePagado = nuevoMontoPagado >= totalNota - 0.01;
 
     const dNow = new Date();
@@ -882,55 +866,90 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
     const refBsNum = parseFloat(equivalenteBsEnRef) || 0;
     if (tipoPagoMixto && bsNum > 0 && refBsNum > 0) {
       tasaImplicitaCalculada = (bsNum / refBsNum).toFixed(2);
-    } else if (!tipoPagoMixto && (metodoSimple.includes('Bolívares') || metodoSimple.includes('Mercantil')) && abonoTotal > 0 && bsNum > 0) {
-      tasaImplicitaCalculada = (bsNum / abonoTotal).toFixed(2);
+    } else if (!tipoPagoMixto && (metodoSimple.includes('Bolívares') || metodoSimple.includes('Mercantil')) && abonoEsteDoc > 0 && bsNum > 0) {
+      tasaImplicitaCalculada = (bsNum / abonoEsteDoc).toFixed(2);
     }
 
-    try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', nota.id), { 
-        pagado: estaCompletamentePagado,
-        montoPagado: nuevoMontoPagado,
-        metodoPago: descripcionesMetodo.join(' + '),
-        fechaPago: fechaPagoStr,
-        tasaImplicita: tasaImplicitaCalculada
-      });
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', nota.id), { 
+      pagado: estaCompletamentePagado,
+      montoPagado: nuevoMontoPagado,
+      metodoPago: descripcionesMetodo.join(' + '),
+      referenciaPago: referenciaPago.trim() || null,
+      fechaPago: fechaPagoStr,
+      tasaImplicita: tasaImplicitaCalculada
+    });
 
-      // Generar Comprobante Automático de Pago
-      const pagoInfo = {
-        id: nota.id,
-        numeroNota: nota.numero,
-        clienteNombre: nota.cliente?.nombre || 'General',
-        fechaPago: fechaPagoStr,
-        tipoOperacion: estaCompletamentePagado ? 'Pago Total Factura' : 'Abono Parcial',
-        metodoPago: descripcionesMetodo.join(' + '),
-        tasaImplicita: tasaImplicitaCalculada,
-        montoAbonado: abonoTotal,
-        totalFactura: totalNota,
-        saldoRestante: Math.max(0, totalNota - nuevoMontoPagado)
-      };
+    // Generar Comprobante PDF/Imagen Automático
+    const pagoInfo = {
+      id: nota.id,
+      numeroNota: nota.numero,
+      clienteNombre: nota.cliente?.nombre || 'General',
+      fechaPago: fechaPagoStr,
+      tipoOperacion: estaCompletamentePagado ? 'Pago Total Factura' : 'Abono Parcial',
+      metodoPago: descripcionesMetodo.join(' + '),
+      referencia: referenciaPago.trim(),
+      montoBsRecibido: bsNum,
+      tasaImplicita: tasaImplicitaCalculada,
+      montoAbonado: abonoEsteDoc,
+      totalFactura: totalNota,
+      saldoRestante: Math.max(0, totalNota - nuevoMontoPagado)
+    };
 
-      setComprobantePagoVisualizando(pagoInfo);
-      setTimeout(async () => {
-        const el = document.getElementById(`recibo-pago-${nota.id}`);
-        if (el && window.html2canvas) {
-          const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-          const link = document.createElement('a');
-          link.download = `Comprobante_Pago_Nota_${nota.numero}.jpg`;
-          link.href = canvas.toDataURL('image/jpeg', 0.9);
-          link.click();
-          showToast("Comprobante de pago generado y descargado");
-        }
-        setComprobantePagoVisualizando(null);
-      }, 300);
+    setComprobantePagoVisualizando(pagoInfo);
+    setTimeout(async () => {
+      const el = document.getElementById(`recibo-pago-${nota.id}`);
+      if (el && window.html2canvas) {
+        const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+        const link = document.createElement('a');
+        link.download = `Comprobante_Pago_Nota_${nota.numero}.jpg`;
+        link.href = canvas.toDataURL('image/jpeg', 0.9);
+        link.click();
+      }
+      setComprobantePagoVisualizando(null);
+    }, 300);
 
+    return abonoEsteDoc;
+  };
+
+  const confirmarCobro = async () => {
+    if (!modalPagoNota) return;
+
+    if (modalPagoNota.esGeneralPorCliente) {
+      if (!clienteSeleccionadoCobro || facturasSeleccionadasCobro.length === 0) {
+        return showToast("Seleccione un cliente y al menos una factura");
+      }
+      const montoTotalAbonar = parseFloat(montoAbono) || 0;
+      if (montoTotalAbonar <= 0) return showToast("Ingrese un monto válido a abonar");
+
+      let restantePorAplicar = montoTotalAbonar;
+      // Ordenar facturas seleccionadas por fecha (antiguas primero)
+      const facturasObj = notas.filter(n => facturasSeleccionadasCobro.includes(n.id)).sort((a,b) => a.timestamp - b.timestamp);
+
+      for (const fac of facturasObj) {
+        if (restantePorAplicar <= 0) break;
+        const aplicada = await procesarCobroIndividual(fac, restantePorAplicar, true);
+        restantePorAplicar -= aplicada;
+      }
+
+      showToast("Cobro múltiple procesado con éxito");
+      setModalPagoNota(null);
+      setClienteSeleccionadoCobro('');
+      setFacturasSeleccionadasCobro([]);
+      setMontoAbono('');
+      setMontoDivisas('');
+      setMontoBs('');
+      setEquivalenteBsEnRef('');
+      setReferenciaPago('');
+    } else {
+      await procesarCobroIndividual(modalPagoNota, parseFloat(montoAbono) || 0, false);
+      showToast("Pago registrado con éxito");
       setModalPagoNota(null);
       setMontoDivisas('');
       setMontoBs('');
       setEquivalenteBsEnRef('');
-      setMontoAbonoParcial('');
+      setMontoAbono('');
+      setReferenciaPago('');
       setTipoPagoMixto(false);
-    } catch (e) {
-      showToast("Error al registrar el cobro");
     }
   };
 
@@ -984,6 +1003,11 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
     ? notas.filter(n => n.estado !== 'anulado' && !n.pagado && n.cliente?.id === clienteSeleccionadoCobro)
     : [];
 
+  // Obtener todas las cuentas pendientes o vigentes de un cliente para mostrar estatus detallado
+  const obtenerOtrasCuentasCliente = (clienteId, notaActualId) => {
+    return notas.filter(n => n.estado !== 'anulado' && n.cliente?.id === clienteId && n.id !== notaActualId);
+  };
+
   return (
     <div className="space-y-6 pb-10">
       <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 shadow-xl space-y-4">
@@ -991,8 +1015,8 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
           <h2 className="text-xl font-black flex items-center gap-2">
             <Wallet className="text-rose-500" /> Cuentas por Cobrar (Estado de Cuenta)
           </h2>
-          <button onClick={() => { setClienteSeleccionadoCobro(''); setModalPagoNota({ esGeneralPorCliente: true }); }} className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow">
-            <Plus className="w-4 h-4" /> Registrar Cobro a Cliente
+          <button onClick={() => { setClienteSeleccionadoCobro(''); setFacturasSeleccionadasCobro([]); setModalPagoNota({ esGeneralPorCliente: true }); }} className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow">
+            <Plus className="w-4 h-4" /> Registrar Cobro Múltiple a Cliente
           </button>
         </div>
         
@@ -1037,7 +1061,7 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
             <tr>
               <th className="p-4">Nota</th>
               <th className="p-4">Cliente / Vendedor</th>
-              <th className="p-4">Condición</th>
+              <th className="p-4">Otras Cuentas del Cliente</th>
               <th className="p-4">Días de Maduración</th>
               <th className="p-4">Estatus Plazo</th>
               <th className="p-4">Total / Pendiente</th>
@@ -1049,20 +1073,37 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
             {notasFiltradas.map(nota => {
               const { diasRestantes, categoria } = calcularMaduracion(nota.timestamp, nota.terminoPago);
               const colorCategoria = categoria === 'Vigente' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : categoria === 'Por Vencer' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30';
-              const condLabel = nota.terminoPago?.startsWith('Fija:') ? `Fecha: ${nota.terminoPago.split(':')[1]}` : nota.terminoPago;
               
               const totalNota = parseFloat(nota.total || 0);
               const pagadoNota = parseFloat(nota.montoPagado || (nota.pagado ? totalNota : 0));
               const pendienteNota = Math.max(0, totalNota - pagadoNota);
+
+              const otrasCuentas = nota.cliente?.id ? obtenerOtrasCuentasCliente(nota.cliente.id, nota.id) : [];
               
               return (
-                <tr key={nota.id} className="hover:bg-zinc-800/30">
+                <tr key={nota.id} className="hover:bg-zinc-800/30 align-top">
                   <td className="p-4 font-mono font-bold text-rose-500">#{nota.numero}</td>
                   <td className="p-4">
                     <div className="font-bold text-white">{nota.cliente?.nombre}</div>
                     <div className="text-xs text-zinc-500">{nota.vendedor?.nombre} • {nota.fecha}</div>
                   </td>
-                  <td className="p-4 text-zinc-300">{condLabel}</td>
+                  <td className="p-4 text-xs">
+                    {otrasCuentas.length > 0 ? (
+                      <div className="space-y-1 max-w-xs">
+                        {otrasCuentas.map(oc => {
+                          const mat = calcularMaduracion(oc.timestamp, oc.terminoPago);
+                          const esVencida = mat.categoria === 'Vencido';
+                          return (
+                            <div key={oc.id} className={`p-1.5 rounded border ${esVencida ? 'bg-red-950/30 border-red-900/50 text-red-300' : 'bg-zinc-950 border-zinc-800 text-zinc-300'}`}>
+                              <b>#{oc.numero}</b> (${parseFloat(oc.total || 0).toFixed(2)}) — <span className={esVencida ? 'font-bold text-red-400' : 'text-blue-400'}>{esVencida ? `Vencida (${Math.abs(mat.diasRestantes)}d)` : `Vigente (${mat.diasRestantes}d)`}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-zinc-500 italic">Sin otras cuentas</span>
+                    )}
+                  </td>
                   <td className="p-4 font-mono font-bold">
                     {nota.terminoPago === 'Contado' ? 'Inmediato' : (
                       <span className={diasRestantes <= 0 ? 'text-red-500 font-black' : diasRestantes <= 5 ? 'text-yellow-400' : 'text-blue-400'}>
@@ -1092,7 +1133,7 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
                         <CheckSquare className="w-5 h-5"/> Pagado ({nota.metodoPago || 'Efectivo'}) - {nota.fechaPago || ''}
                       </button>
                     ) : (
-                      <button onClick={() => { setModalPagoNota(nota); setTipoPago('completo'); setTipoPagoMixto(false); setMontoDivisas(''); setMontoBs(''); setEquivalenteBsEnRef(''); setMontoAbonoParcial(''); }} className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20">
+                      <button onClick={() => { setModalPagoNota(nota); setTipoPago('completo'); setTipoPagoMixto(false); setMontoDivisas(''); setMontoBs(''); setEquivalenteBsEnRef(''); setReferenciaPago(''); }} className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20">
                         <Square className="w-5 h-5"/> Registrar Pago / Abono
                       </button>
                     )}
@@ -1109,46 +1150,105 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
 
       {modalPagoNota && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-lg w-full shadow-2xl space-y-4">
             <h3 className="text-xl font-black text-rose-500">
-              {modalPagoNota.esGeneralPorCliente ? 'Registrar Cobro a Cliente' : `Registrar Pago - Nota #${modalPagoNota.numero}`}
+              {modalPagoNota.esGeneralPorCliente ? 'Cobro Múltiple a Cliente' : `Registrar Pago - Nota #${modalPagoNota.numero}`}
             </h3>
 
             {modalPagoNota.esGeneralPorCliente ? (
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Seleccionar Cliente</label>
-                  <select value={clienteSeleccionadoCobro} onChange={e => setClienteSeleccionadoCobro(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
-                    <option value="">Seleccione cliente con cuentas...</option>
+                  <select value={clienteSeleccionadoCobro} onChange={e => { setClienteSeleccionadoCobro(e.target.value); setFacturasSeleccionadasCobro([]); }} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+                    <option value="">Seleccione cliente...</option>
                     {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                   </select>
                 </div>
 
                 {clienteSeleccionadoCobro && (
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Seleccione Factura Pendiente</label>
-                    <select value="" onChange={e => {
-                      const sel = notasPendientesCliente.find(n => n.id === e.target.value);
-                      if (sel) {
-                        setModalPagoNota(sel);
-                        setTipoPago('completo');
-                        setTipoPagoMixto(false);
-                        setMontoDivisas('');
-                        setMontoBs('');
-                        setEquivalenteBsEnRef('');
-                        setMontoAbonoParcial('');
-                      }
-                    }} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
-                      <option value="">Seleccione factura...</option>
-                      {notasPendientesCliente.map(n => (
-                        <option key={n.id} value={n.id}>Nota #{n.numero} - Fecha: {n.fecha} (${parseFloat(n.total || 0).toFixed(2)} REF)</option>
-                      ))}
-                    </select>
-                    {notasPendientesCliente.length === 0 && <p className="text-xs text-zinc-500 mt-2">Este cliente no tiene facturas pendientes.</p>}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-zinc-400 uppercase">Seleccione las Facturas a Cancelar / Abonar</label>
+                    <div className="max-h-48 overflow-y-auto space-y-2 bg-zinc-950 p-3 rounded-xl border border-zinc-800">
+                      {notasPendientesCliente.map(n => {
+                        const tot = parseFloat(n.total || 0);
+                        const pag = parseFloat(n.montoPagado || 0);
+                        const pend = Math.max(0, tot - pag);
+                        const isChecked = facturasSeleccionadasCobro.includes(n.id);
+                        return (
+                          <label key={n.id} className="flex items-center justify-between p-2 rounded hover:bg-zinc-900 cursor-pointer">
+                            <div className="flex items-center gap-2">
+                              <input type="checkbox" checked={isChecked} onChange={e => {
+                                if (e.target.checked) setFacturasSeleccionadasCobro([...facturasSeleccionadasCobro, n.id]);
+                                else setFacturasSeleccionadasCobro(facturasSeleccionadasCobro.filter(id => id !== n.id));
+                              }} className="w-4 h-4 accent-rose-600 rounded" />
+                              <span className="text-sm font-bold text-white">Nota #{n.numero} ({n.fecha})</span>
+                            </div>
+                            <span className="text-xs text-rose-400 font-mono">Pendiente: ${pend.toFixed(2)}</span>
+                          </label>
+                        );
+                      })}
+                      {notasPendientesCliente.length === 0 && <p className="text-xs text-zinc-500 text-center py-2">Este cliente no tiene facturas pendientes.</p>}
+                    </div>
                   </div>
                 )}
+
+                {facturasSeleccionadasCobro.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Monto Total a Abonar / Pagar ($ REF)</label>
+                      <input type="number" step="0.01" value={montoAbono} onChange={e => setMontoAbono(e.target.value)} placeholder="Ej: 35.00" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500" />
+                    </div>
+
+                    <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-800">
+                      <span className="text-xs font-bold uppercase text-zinc-400">¿Pago Mixto (Divisas + Bs)?</span>
+                      <input type="checkbox" checked={tipoPagoMixto} onChange={e => setTipoPagoMixto(e.target.checked)} className="w-5 h-5 accent-rose-600 rounded cursor-pointer" />
+                    </div>
+
+                    {!tipoPagoMixto ? (
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Método de Pago</label>
+                        <select value={metodoSimple} onChange={e => setMetodoSimple(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+                          <option value="Divisas en efectivo">Divisas en efectivo</option>
+                          <option value="Bolívares en efectivo">Bolívares en efectivo</option>
+                          <option value="Transferencia bancaria Mercantil">Transferencia bancaria Mercantil</option>
+                          <option value="Binance">Binance</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                        <span className="text-xs font-bold text-rose-500 uppercase block">Desglose de Pago Mixto</span>
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto en Divisas ($)</label>
+                          <input type="number" step="0.01" value={montoDivisas} onChange={e => setMontoDivisas(e.target.value)} placeholder="0.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Equivalente descontado en Factura ($ REF)</label>
+                          <input type="number" step="0.01" value={equivalenteBsEnRef} onChange={e => setEquivalenteBsEnRef(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto Recibido en Bolívares (Bs)</label>
+                          <input type="number" step="0.01" value={montoBs} onChange={e => setMontoBs(e.target.value)} placeholder="Ej: 200.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
+                        </div>
+                        {parseFloat(montoBs) > 0 && parseFloat(equivalenteBsEnRef) > 0 && (
+                          <div className="text-xs text-green-400 font-mono pt-1">
+                            💱 Tasa Implícita Calculada: <b>{(parseFloat(montoBs) / parseFloat(equivalenteBsEnRef)).toFixed(2)} Bs/$</b>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Nro. de Referencia (Si aplica)</label>
+                      <input type="text" value={referenciaPago} onChange={e => setReferenciaPago(e.target.value)} placeholder="Ej: 12345678" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500 font-mono" />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3 justify-end pt-2">
                   <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cerrar</button>
+                  {facturasSeleccionadasCobro.length > 0 && (
+                    <button onClick={confirmarCobro} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Procesar Cobro Múltiple</button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1196,7 +1296,7 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
                     {tipoPago === 'abono' && (
                       <div>
                         <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Monto del Abono ($ REF)</label>
-                        <input type="number" step="0.01" value={montoAbonoParcial} onChange={e => setMontoAbonoParcial(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500" />
+                        <input type="number" step="0.01" value={montoAbono} onChange={e => setMontoAbono(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500" />
                       </div>
                     )}
 
@@ -1237,6 +1337,11 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
                         )}
                       </div>
                     )}
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Nro. de Referencia (Si aplica)</label>
+                      <input type="text" value={referenciaPago} onChange={e => setReferenciaPago(e.target.value)} placeholder="Ej: 12345678" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500 font-mono" />
+                    </div>
 
                     <div className="flex gap-3 justify-end pt-2">
                       <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
