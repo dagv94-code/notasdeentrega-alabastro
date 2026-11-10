@@ -353,7 +353,7 @@ function ComprobantePagoView({ pagoData }) {
       </div>
 
       <div className="bg-emerald-50 border-2 border-emerald-600 p-4 rounded-xl text-right mb-6 space-y-1">
-        <div className="text-sm text-emerald-900"><b>MONTO RECIBO / ABONADO:</b> ${pagoData.montoAbonado.toFixed(2)} REF</div>
+        <div className="text-sm text-emerald-900"><b>MONTO RECIBIDO / ABONADO:</b> ${pagoData.montoAbonado.toFixed(2)} REF</div>
         <div className="text-sm text-zinc-700"><b>TOTAL FACTURA:</b> ${pagoData.totalFactura.toFixed(2)} REF</div>
         <div className={`text-base font-black ${pagoData.saldoRestante > 0 ? 'text-red-600' : 'text-green-700'}`}>
           <b>SALDO PENDIENTE:</b> ${pagoData.saldoRestante.toFixed(2)} REF
@@ -796,7 +796,7 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
   const [metodoSimple, setMetodoSimple] = useState('Divisas en efectivo');
 
   const [clienteSeleccionadoCobro, setClienteSeleccionadoCobro] = useState('');
-  const [facturasSeleccionadasCobro, setFacturasSeleccionadasCobro] = useState([]); // para selección múltiple
+  const [facturasSeleccionadasCobro, setFacturasSeleccionadasCobro] = useState([]);
   const [comprobantePagoVisualizando, setComprobantePagoVisualizando] = useState(null);
 
   const calcularMaduracion = (timestamp, termino) => {
@@ -837,12 +837,38 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
     return { diasRestantes, categoria };
   };
 
-  const procesarCobroIndividual = async (nota, montoAbonarParcial, esGlobalMultiple = false) => {
+  const abrirModalCobroParaNota = (nota) => {
+    setClienteSeleccionadoCobro(nota.cliente?.id || '');
+    setFacturasSeleccionadasCobro([nota.id]);
+    setModalPagoNota({ esGeneralPorCliente: true, notaUnica: nota });
+    setTipoCobro('completo');
+    setTipoPagoMixto(false);
+    setMontoDivisas('');
+    setMontoBs('');
+    setEquivalenteBsEnRef('');
+    setReferenciaPago('');
+    setMontoAbono('');
+  };
+
+  const abrirModalCobroGeneral = () => {
+    setClienteSeleccionadoCobro('');
+    setFacturasSeleccionadasCobro([]);
+    setModalPagoNota({ esGeneralPorCliente: true });
+    setTipoCobro('completo');
+    setTipoPagoMixto(false);
+    setMontoDivisas('');
+    setMontoBs('');
+    setEquivalenteBsEnRef('');
+    setReferenciaPago('');
+    setMontoAbono('');
+  };
+
+  const procesarCobroIndividual = async (nota, montoAbonarParcial) => {
     const totalNota = parseFloat(nota.total || 0);
     const yaPagado = parseFloat(nota.montoPagado || 0);
     const saldoPendiente = Math.max(0, totalNota - yaPagado);
 
-    let abonoEsteDoc = esGlobalMultiple ? Math.min(saldoPendiente, montoAbonarParcial) : (tipoCobro === 'completo' ? saldoPendiente : parseFloat(montoAbono) || 0);
+    let abonoEsteDoc = montoAbonarParcial !== null ? Math.min(saldoPendiente, montoAbonarParcial) : saldoPendiente;
     if (abonoEsteDoc <= 0) return 0;
 
     let descripcionesMetodo = [];
@@ -879,7 +905,6 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
       tasaImplicita: tasaImplicitaCalculada
     });
 
-    // Generar Comprobante PDF/Imagen Automático
     const pagoInfo = {
       id: nota.id,
       numeroNota: nota.numero,
@@ -914,43 +939,52 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
   const confirmarCobro = async () => {
     if (!modalPagoNota) return;
 
-    if (modalPagoNota.esGeneralPorCliente) {
-      if (!clienteSeleccionadoCobro || facturasSeleccionadasCobro.length === 0) {
-        return showToast("Seleccione un cliente y al menos una factura");
+    if (!clienteSeleccionadoCobro || facturasSeleccionadasCobro.length === 0) {
+      return showToast("Seleccione un cliente y al menos una factura");
+    }
+
+    const facturasObj = notas.filter(n => facturasSeleccionadasCobro.includes(n.id)).sort((a,b) => a.timestamp - b.timestamp);
+
+    if (tipoPago === 'completo') {
+      let restantePorAplicar = 999999;
+      if (tipoPagoMixto) {
+        const divNum = parseFloat(montoDivisas) || 0;
+        const refBsNum = parseFloat(equivalenteBsEnRef) || 0;
+        restantePorAplicar = divNum + refBsNum;
+        if (restantePorAplicar <= 0) return showToast("Ingrese montos válidos");
       }
+
+      for (const fac of facturasObj) {
+        if (tipoPagoMixto && restantePorAplicar <= 0) break;
+        await procesarCobroIndividual(fac, tipoPagoMixto ? restantePorAplicar : null);
+        if (tipoPagoMixto) {
+          const totFac = parseFloat(fac.total || 0);
+          const pagFac = parseFloat(fac.montoPagado || 0);
+          const pendFac = Math.max(0, totFac - pagFac);
+          restantePorAplicar -= pendFac;
+        }
+      }
+    } else {
       const montoTotalAbonar = parseFloat(montoAbono) || 0;
       if (montoTotalAbonar <= 0) return showToast("Ingrese un monto válido a abonar");
 
       let restantePorAplicar = montoTotalAbonar;
-      // Ordenar facturas seleccionadas por fecha (antiguas primero)
-      const facturasObj = notas.filter(n => facturasSeleccionadasCobro.includes(n.id)).sort((a,b) => a.timestamp - b.timestamp);
-
       for (const fac of facturasObj) {
         if (restantePorAplicar <= 0) break;
-        const aplicada = await procesarCobroIndividual(fac, restantePorAplicar, true);
+        const aplicada = await procesarCobroIndividual(fac, restantePorAplicar);
         restantePorAplicar -= aplicada;
       }
-
-      showToast("Cobro múltiple procesado con éxito");
-      setModalPagoNota(null);
-      setClienteSeleccionadoCobro('');
-      setFacturasSeleccionadasCobro([]);
-      setMontoAbono('');
-      setMontoDivisas('');
-      setMontoBs('');
-      setEquivalenteBsEnRef('');
-      setReferenciaPago('');
-    } else {
-      await procesarCobroIndividual(modalPagoNota, parseFloat(montoAbono) || 0, false);
-      showToast("Pago registrado con éxito");
-      setModalPagoNota(null);
-      setMontoDivisas('');
-      setMontoBs('');
-      setEquivalenteBsEnRef('');
-      setMontoAbono('');
-      setReferenciaPago('');
-      setTipoPagoMixto(false);
     }
+
+    showToast("Cobro procesado con éxito y recibo generado");
+    setModalPagoNota(null);
+    setClienteSeleccionadoCobro('');
+    setFacturasSeleccionadasCobro([]);
+    setMontoAbono('');
+    setMontoDivisas('');
+    setMontoBs('');
+    setEquivalenteBsEnRef('');
+    setReferenciaPago('');
   };
 
   const enviarRecordatorioWhatsApp = async (nota) => {
@@ -1003,7 +1037,6 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
     ? notas.filter(n => n.estado !== 'anulado' && !n.pagado && n.cliente?.id === clienteSeleccionadoCobro)
     : [];
 
-  // Obtener todas las cuentas pendientes o vigentes de un cliente para mostrar estatus detallado
   const obtenerOtrasCuentasCliente = (clienteId, notaActualId) => {
     return notas.filter(n => n.estado !== 'anulado' && n.cliente?.id === clienteId && n.id !== notaActualId);
   };
@@ -1015,8 +1048,8 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
           <h2 className="text-xl font-black flex items-center gap-2">
             <Wallet className="text-rose-500" /> Cuentas por Cobrar (Estado de Cuenta)
           </h2>
-          <button onClick={() => { setClienteSeleccionadoCobro(''); setFacturasSeleccionadasCobro([]); setModalPagoNota({ esGeneralPorCliente: true }); }} className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow">
-            <Plus className="w-4 h-4" /> Registrar Cobro Múltiple a Cliente
+          <button onClick={abrirModalCobroGeneral} className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow">
+            <Plus className="w-4 h-4" /> Registrar Cobro a Cliente
           </button>
         </div>
         
@@ -1129,11 +1162,11 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
                   </td>
                   <td className="p-4 text-center">
                     {nota.pagado ? (
-                      <button onClick={() => { setModalPagoNota(nota); }} className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full hover:bg-green-500/20">
+                      <button onClick={() => abrirModalCobroParaNota(nota)} className="text-green-400 font-bold inline-flex items-center gap-1 bg-green-500/10 px-3 py-1 rounded-full hover:bg-green-500/20">
                         <CheckSquare className="w-5 h-5"/> Pagado ({nota.metodoPago || 'Efectivo'}) - {nota.fechaPago || ''}
                       </button>
                     ) : (
-                      <button onClick={() => { setModalPagoNota(nota); setTipoPago('completo'); setTipoPagoMixto(false); setMontoDivisas(''); setMontoBs(''); setEquivalenteBsEnRef(''); setReferenciaPago(''); }} className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20">
+                      <button onClick={() => abrirModalCobroParaNota(nota)} className="text-yellow-400 font-bold inline-flex items-center gap-1 bg-yellow-500/10 px-3 py-1 rounded-full hover:bg-yellow-500/20">
                         <Square className="w-5 h-5"/> Registrar Pago / Abono
                       </button>
                     )}
@@ -1151,206 +1184,117 @@ function CuentasPorCobrarTab({ notas, clientes, vendedores, showToast, db }) {
       {modalPagoNota && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-lg w-full shadow-2xl space-y-4">
-            <h3 className="text-xl font-black text-rose-500">
-              {modalPagoNota.esGeneralPorCliente ? 'Cobro Múltiple a Cliente' : `Registrar Pago - Nota #${modalPagoNota.numero}`}
-            </h3>
+            <h3 className="text-xl font-black text-rose-500">Registrar Cobro / Pago a Cliente</h3>
 
-            {modalPagoNota.esGeneralPorCliente ? (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Seleccionar Cliente</label>
-                  <select value={clienteSeleccionadoCobro} onChange={e => { setClienteSeleccionadoCobro(e.target.value); setFacturasSeleccionadasCobro([]); }} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
-                    <option value="">Seleccione cliente...</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Seleccionar Cliente</label>
+                <select value={clienteSeleccionadoCobro} onChange={e => { setClienteSeleccionadoCobro(e.target.value); setFacturasSeleccionadasCobro([]); }} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+                  <option value="">Seleccione cliente...</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+
+              {clienteSeleccionadoCobro && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-zinc-400 uppercase">Seleccione una o varias Facturas Pendientes</label>
+                  <div className="max-h-48 overflow-y-auto space-y-2 bg-zinc-950 p-3 rounded-xl border border-zinc-800">
+                    {notasPendientesCliente.map(n => {
+                      const tot = parseFloat(n.total || 0);
+                      const pag = parseFloat(n.montoPagado || 0);
+                      const pend = Math.max(0, tot - pag);
+                      const isChecked = facturasSeleccionadasCobro.includes(n.id);
+                      return (
+                        <label key={n.id} className="flex items-center justify-between p-2 rounded hover:bg-zinc-900 cursor-pointer">
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={isChecked} onChange={e => {
+                              if (e.target.checked) setFacturasSeleccionadasCobro([...facturasSeleccionadasCobro, n.id]);
+                              else setFacturasSeleccionadasCobro(facturasSeleccionadasCobro.filter(id => id !== n.id));
+                            }} className="w-4 h-4 accent-rose-600 rounded" />
+                            <span className="text-sm font-bold text-white">Nota #{n.numero} ({n.fecha})</span>
+                          </div>
+                          <span className="text-xs text-rose-400 font-mono">Pendiente: ${pend.toFixed(2)}</span>
+                        </label>
+                      );
+                    })}
+                    {notasPendientesCliente.length === 0 && <p className="text-xs text-zinc-500 text-center py-2">Este cliente no tiene facturas pendientes.</p>}
+                  </div>
                 </div>
+              )}
 
-                {clienteSeleccionadoCobro && (
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-zinc-400 uppercase">Seleccione las Facturas a Cancelar / Abonar</label>
-                    <div className="max-h-48 overflow-y-auto space-y-2 bg-zinc-950 p-3 rounded-xl border border-zinc-800">
-                      {notasPendientesCliente.map(n => {
-                        const tot = parseFloat(n.total || 0);
-                        const pag = parseFloat(n.montoPagado || 0);
-                        const pend = Math.max(0, tot - pag);
-                        const isChecked = facturasSeleccionadasCobro.includes(n.id);
-                        return (
-                          <label key={n.id} className="flex items-center justify-between p-2 rounded hover:bg-zinc-900 cursor-pointer">
-                            <div className="flex items-center gap-2">
-                              <input type="checkbox" checked={isChecked} onChange={e => {
-                                if (e.target.checked) setFacturasSeleccionadasCobro([...facturasSeleccionadasCobro, n.id]);
-                                else setFacturasSeleccionadasCobro(facturasSeleccionadasCobro.filter(id => id !== n.id));
-                              }} className="w-4 h-4 accent-rose-600 rounded" />
-                              <span className="text-sm font-bold text-white">Nota #{n.numero} ({n.fecha})</span>
-                            </div>
-                            <span className="text-xs text-rose-400 font-mono">Pendiente: ${pend.toFixed(2)}</span>
-                          </label>
-                        );
-                      })}
-                      {notasPendientesCliente.length === 0 && <p className="text-xs text-zinc-500 text-center py-2">Este cliente no tiene facturas pendientes.</p>}
+              {facturasSeleccionadasCobro.length > 0 && (
+                <div className="space-y-4 pt-2">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Tipo de Pago</label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setTipoCobro('completo')} className={`flex-1 py-2 rounded-xl text-xs font-bold ${tipoCobro === 'completo' ? 'bg-rose-600 text-white' : 'bg-zinc-950 border border-zinc-800 text-zinc-400'}`}>
+                        Pago Completo de la(s) Factura(s)
+                      </button>
+                      <button type="button" onClick={() => setTipoCobro('parcial')} className={`flex-1 py-2 rounded-xl text-xs font-bold ${tipoCobro === 'parcial' ? 'bg-rose-600 text-white' : 'bg-zinc-950 border border-zinc-800 text-zinc-400'}`}>
+                        Abono Parcial Personalizado
+                      </button>
                     </div>
                   </div>
-                )}
 
-                {facturasSeleccionadasCobro.length > 0 && (
-                  <div className="space-y-3 pt-2">
+                  {tipoCobro === 'parcial' && (
                     <div>
-                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Monto Total a Abonar / Pagar ($ REF)</label>
+                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Monto Total del Abono ($ REF)</label>
                       <input type="number" step="0.01" value={montoAbono} onChange={e => setMontoAbono(e.target.value)} placeholder="Ej: 35.00" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500" />
                     </div>
-
-                    <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-800">
-                      <span className="text-xs font-bold uppercase text-zinc-400">¿Pago Mixto (Divisas + Bs)?</span>
-                      <input type="checkbox" checked={tipoPagoMixto} onChange={e => setTipoPagoMixto(e.target.checked)} className="w-5 h-5 accent-rose-600 rounded cursor-pointer" />
-                    </div>
-
-                    {!tipoPagoMixto ? (
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Método de Pago</label>
-                        <select value={metodoSimple} onChange={e => setMetodoSimple(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
-                          <option value="Divisas en efectivo">Divisas en efectivo</option>
-                          <option value="Bolívares en efectivo">Bolívares en efectivo</option>
-                          <option value="Transferencia bancaria Mercantil">Transferencia bancaria Mercantil</option>
-                          <option value="Binance">Binance</option>
-                        </select>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                        <span className="text-xs font-bold text-rose-500 uppercase block">Desglose de Pago Mixto</span>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto en Divisas ($)</label>
-                          <input type="number" step="0.01" value={montoDivisas} onChange={e => setMontoDivisas(e.target.value)} placeholder="0.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Equivalente descontado en Factura ($ REF)</label>
-                          <input type="number" step="0.01" value={equivalenteBsEnRef} onChange={e => setEquivalenteBsEnRef(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto Recibido en Bolívares (Bs)</label>
-                          <input type="number" step="0.01" value={montoBs} onChange={e => setMontoBs(e.target.value)} placeholder="Ej: 200.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
-                        </div>
-                        {parseFloat(montoBs) > 0 && parseFloat(equivalenteBsEnRef) > 0 && (
-                          <div className="text-xs text-green-400 font-mono pt-1">
-                            💱 Tasa Implícita Calculada: <b>{(parseFloat(montoBs) / parseFloat(equivalenteBsEnRef)).toFixed(2)} Bs/$</b>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Nro. de Referencia (Si aplica)</label>
-                      <input type="text" value={referenciaPago} onChange={e => setReferenciaPago(e.target.value)} placeholder="Ej: 12345678" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500 font-mono" />
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-3 justify-end pt-2">
-                  <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cerrar</button>
-                  {facturasSeleccionadasCobro.length > 0 && (
-                    <button onClick={confirmarCobro} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Procesar Cobro Múltiple</button>
                   )}
+
+                  <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-800">
+                    <span className="text-xs font-bold uppercase text-zinc-400">¿Pago Mixto (Divisas + Bs)?</span>
+                    <input type="checkbox" checked={tipoPagoMixto} onChange={e => setTipoPagoMixto(e.target.checked)} className="w-5 h-5 accent-rose-600 rounded cursor-pointer" />
+                  </div>
+
+                  {!tipoPagoMixto ? (
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Método de Pago</label>
+                      <select value={metodoSimple} onChange={e => setMetodoSimple(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
+                        <option value="Divisas en efectivo">Divisas en efectivo</option>
+                        <option value="Bolívares en efectivo">Bolívares en efectivo</option>
+                        <option value="Transferencia bancaria Mercantil">Transferencia bancaria Mercantil</option>
+                        <option value="Binance">Binance</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                      <span className="text-xs font-bold text-rose-500 uppercase block">Desglose de Pago Mixto</span>
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto en Divisas ($)</label>
+                        <input type="number" step="0.01" value={montoDivisas} onChange={e => setMontoDivisas(e.target.value)} placeholder="0.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase">Equivalente descontado en Factura ($ REF)</label>
+                        <input type="number" step="0.01" value={equivalenteBsEnRef} onChange={e => setEquivalenteBsEnRef(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto Recibido en Bolívares (Bs)</label>
+                        <input type="number" step="0.01" value={montoBs} onChange={e => setMontoBs(e.target.value)} placeholder="Ej: 200.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
+                      </div>
+                      {parseFloat(montoBs) > 0 && parseFloat(equivalenteBsEnRef) > 0 && (
+                        <div className="text-xs text-green-400 font-mono pt-1">
+                          💱 Tasa Implícita Calculada: <b>{(parseFloat(montoBs) / parseFloat(equivalenteBsEnRef)).toFixed(2)} Bs/$</b>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Nro. de Referencia (Si aplica transferencia)</label>
+                    <input type="text" value={referenciaPago} onChange={e => setReferenciaPago(e.target.value)} placeholder="Ej: 12345678" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500 font-mono" />
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-sm text-zinc-300">Cliente: <b>{modalPagoNota.cliente?.nombre}</b></p>
-                {(() => {
-                  const tot = parseFloat(modalPagoNota.total || 0);
-                  const pag = parseFloat(modalPagoNota.montoPagado || 0);
-                  const pend = Math.max(0, tot - pag);
-                  return (
-                    <div className="text-xs text-zinc-400 mt-1 space-y-0.5">
-                      <div>Total Factura: <b>${tot.toFixed(2)} REF</b></div>
-                      <div>Ya Abonado: <b>${pag.toFixed(2)} REF</b></div>
-                      <div className="text-rose-400 font-bold text-sm">Saldo Pendiente: ${pend.toFixed(2)} REF</div>
-                    </div>
-                  );
-                })()}
-                
-                {modalPagoNota.pagado ? (
-                  <div className="space-y-3 mt-4">
-                    <p className="text-xs text-yellow-400">Este documento ya está marcado como pagado. ¿Desea revertirlo a pendiente?</p>
-                    <div className="flex gap-3 justify-end">
-                      <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
-                      <button onClick={async () => {
-                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notas', modalPagoNota.id), { pagado: false, montoPagado: 0, metodoPago: null, fechaPago: null });
-                        showToast("Marcado como pendiente");
-                        setModalPagoNota(null);
-                      }} className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold">Marcar Pendiente</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4 mt-4">
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Tipo de Pago</label>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setTipoPago('completo')} className={`flex-1 py-2 rounded-xl text-xs font-bold ${tipoPago === 'completo' ? 'bg-rose-600 text-white' : 'bg-zinc-950 border border-zinc-800 text-zinc-400'}`}>
-                          Pago Completo del Saldo
-                        </button>
-                        <button type="button" onClick={() => setTipoPago('abono')} className={`flex-1 py-2 rounded-xl text-xs font-bold ${tipoPago === 'abono' ? 'bg-rose-600 text-white' : 'bg-zinc-950 border border-zinc-800 text-zinc-400'}`}>
-                          Abono Parcial
-                        </button>
-                      </div>
-                    </div>
+              )}
 
-                    {tipoPago === 'abono' && (
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Monto del Abono ($ REF)</label>
-                        <input type="number" step="0.01" value={montoAbono} onChange={e => setMontoAbono(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500" />
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-800">
-                      <span className="text-xs font-bold uppercase text-zinc-400">¿Pago Mixto (Divisas + Bs)?</span>
-                      <input type="checkbox" checked={tipoPagoMixto} onChange={e => setTipoPagoMixto(e.target.checked)} className="w-5 h-5 accent-rose-600 rounded cursor-pointer" />
-                    </div>
-
-                    {!tipoPagoMixto ? (
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Método de Pago Simple</label>
-                        <select value={metodoSimple} onChange={e => setMetodoSimple(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-rose-500">
-                          <option value="Divisas en efectivo">Divisas en efectivo</option>
-                          <option value="Bolívares en efectivo">Bolívares en efectivo</option>
-                          <option value="Transferencia bancaria Mercantil">Transferencia bancaria Mercantil</option>
-                          <option value="Binance">Binance</option>
-                        </select>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                        <span className="text-xs font-bold text-rose-500 uppercase block">Desglose de Pago Mixto</span>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto en Divisas ($)</label>
-                          <input type="number" step="0.01" value={montoDivisas} onChange={e => setMontoDivisas(e.target.value)} placeholder="0.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Equivalente descontado en Factura ($ REF)</label>
-                          <input type="number" step="0.01" value={equivalenteBsEnRef} onChange={e => setEquivalenteBsEnRef(e.target.value)} placeholder="Ej: 5.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-zinc-400 uppercase">Monto Recibido en Bolívares (Bs)</label>
-                          <input type="number" step="0.01" value={montoBs} onChange={e => setMontoBs(e.target.value)} placeholder="Ej: 200.00" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white text-sm outline-none mt-1" />
-                        </div>
-                        {parseFloat(montoBs) > 0 && parseFloat(equivalenteBsEnRef) > 0 && (
-                          <div className="text-xs text-green-400 font-mono pt-1">
-                            💱 Tasa Implícita Calculada: <b>{(parseFloat(montoBs) / parseFloat(equivalenteBsEnRef)).toFixed(2)} Bs/$</b>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Nro. de Referencia (Si aplica)</label>
-                      <input type="text" value={referenciaPago} onChange={e => setReferenciaPago(e.target.value)} placeholder="Ej: 12345678" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none focus:border-rose-500 font-mono" />
-                    </div>
-
-                    <div className="flex gap-3 justify-end pt-2">
-                      <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cancelar</button>
-                      <button onClick={confirmarCobro} className="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold">Procesar y Generar Recibo</button>
-                    </div>
-                  </div>
+              <div className="flex gap-3 justify-end pt-2">
+                <button onClick={() => setModalPagoNota(null)} className="px-4 py-2 bg-zinc-800 text-white rounded-xl font-bold">Cerrar</button>
+                {facturasSeleccionadasCobro.length > 0 && (
+                  <button onClick={confirmarCobro} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold">Procesar Cobro y Generar Recibo</button>
                 )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
